@@ -1,0 +1,584 @@
+---
+devices:
+  cpu_5x16_1.1:
+    did: 0
+    port:
+      dv: 1  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 2  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x1  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 16
+      mls: 5
+      rootport: 1
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x1001
+      command: 0x0506
+      status: 0x0010
+      revid: 0
+      pi: 0x00
+      subclass: 0x02
+      baseclass: 0x05
+      cacheline: 0x10
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0000
+  cpu_5x16_2.0:
+    did: 1
+    port:
+      dv: 2  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 2  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x3  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 16
+      mls: 5
+      rootport: 1
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x1002
+      command: 0x0506
+      status: 0x0010
+      revid: 0
+      pi: 0x00
+      subclass: 0x02
+      baseclass: 0x05
+      cacheline: 0x10
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0001
+  mld_5x8_1.1_4G:
+    did: 2
+    port:
+      dv: 1  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 5  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x1  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 8
+      mls: 5
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x2001
+      command: 0x0506
+      status: 0x0010
+      revid: 0
+      pi: 0x10  # CXL 2.0 Compliant Device
+      subclass: 0x02  # 0x02=CXL Device
+      baseclass: 0x05  # 0x05=Memory Controller
+      cacheline: 0x10  # number of 4B values. 0x10=64B
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0002
+      intline: 0
+      intpin: 0
+      mingnt: 0
+      maxlat: 0
+      cap:
+        0x01: "03,00,00,00,00,00"
+        0x05: "8A,01,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+      ecap:
+        0x00030: "02,00,00,00,00,00,00,00"
+    mld:
+      mmap: 1
+      memory_size: 0x100000000  # 4GB
+      num: 4
+      epc: 1
+      ttr: 1
+      granularity: 0  # 0=256MB, 1=512MB, 2=1GB
+      rng1: "0,4,8,12"
+      rng2: "3,7,11,15"
+      epc_en: 1
+      ttr_en: 1
+      egress_mod_pcnt: 10
+      egress_sev_pcnt: 25
+      sample_interval: 8
+      req_cmp_basis: 0
+      comp_interval: 64
+      bp_avg_pcnt: 42
+      alloc_bw: "64,64,64,64"
+      bw_limit: "ff,ff,ff,ff"
+  mld_5x8_1.1_64G:
+    did: 3
+    port:
+      dv: 1  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 5  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x1  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 8
+      mls: 5
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x3001
+      command: 0x0506
+      status: 0x0010
+      revid: 0
+      pi: 0x10
+      subclass: 0x02
+      baseclass: 0x05
+      cacheline: 0x10
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0006
+      cap:
+        0x01: "03,00,00,00,00,00"
+        0x05: "8A,01,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+      ecap:
+        0x00030: "06,00,00,00,00,00,00,00"
+    mld:
+      memory_size: 0x1000000000  # 64GB
+      num: 16
+      epc: 1
+      ttr: 1
+      granularity: 2  # 0=256MB, 1=512MB, 2=1GB
+      rng1: "0,4,8,12,16,20,24,28,32,36,40,44,48,52,56,60"
+      rng2: "4,8,12,16,20,24,28,32,36,40,44,48,52,56,60,64"
+      epc_en: 1
+      ttr_en: 1
+      egress_mod_pcnt: 10
+      egress_sev_pcnt: 25
+      sample_interval: 8
+      req_cmp_basis: 0
+      comp_interval: 64
+      bp_avg_pcnt: 42
+      alloc_bw: "16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16"
+      bw_limit: "ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff"
+  mld_5x8_2.0_4G:
+    did: 4
+    port:
+      dv: 2  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 5  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x3  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 8
+      mls: 5
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x2003
+      revid: 0
+      command: 0x0506
+      status: 0x0010
+      pi: 0x10
+      subclass: 0x02
+      baseclass: 0x05
+      cacheline: 0x10
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0004
+      cap:
+        0x01: "03,00,00,00,00,00"
+        0x05: "8A,01,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+      ecap:
+        0x00030: "04,00,00,00,00,00,00,00"
+    mld:
+      mmap: 1
+      memory_size: 0x100000000  # 4GB
+      num: 4
+      epc: 1
+      ttr: 1
+      granularity: 0  # 0=256MB, 1=512MB, 2=1GB
+      rng1: "0,4,8,12"
+      rng2: "3,7,11,15"
+      epc_en: 1
+      ttr_en: 1
+      egress_mod_pcnt: 10
+      egress_sev_pcnt: 25
+      sample_interval: 8
+      req_cmp_basis: 0
+      comp_interval: 64
+      bp_avg_pcnt: 42
+      alloc_bw: "64,64,64,64"
+      bw_limit: "ff,ff,ff,ff"
+  mld_5x8_2.0_64G:
+    did: 5
+    port:
+      dv: 2  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 5  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x3  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 8
+      mls: 5
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x3003
+      command: 0x0506
+      status: 0x0010
+      revid: 0
+      pi: 0x10
+      subclass: 0x02
+      baseclass: 0x05
+      cacheline: 0x10
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0008
+      cap:
+        0x01: "03,00,00,00,00,00"
+        0x05: "8A,01,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+      ecap:
+        0x00030: "08,00,00,00,00,00,00,00"
+    mld:
+      memory_size: 0x1000000000  # 64GB
+      num: 16
+      epc: 1
+      ttr: 1
+      granularity: 2  # 0=256MB, 1=512MB, 2=1GB
+      rng1: "0,4,8,12,16,20,24,28,32,36,40,44,48,52,56,60"
+      rng2: "4,8,12,16,20,24,28,32,36,40,44,48,52,56,60,64"
+      epc_en: 1
+      ttr_en: 1
+      egress_mod_pcnt: 10
+      egress_sev_pcnt: 25
+      sample_interval: 8
+      req_cmp_basis: 0
+      comp_interval: 64
+      bp_avg_pcnt: 42
+      alloc_bw: "16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16"
+      bw_limit: "ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff"
+  mld_5x16_1.1_4G:
+    did: 6
+    port:
+      dv: 1  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 5  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x1  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 16
+      mls: 5
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x2002
+      command: 0x0506
+      status: 0x0010
+      revid: 0
+      pi: 0x10
+      subclass: 0x02
+      baseclass: 0x05
+      cacheline: 0x10
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0003
+      intline: 0
+      intpin: 0
+      mingnt: 0
+      maxlat: 0
+      cap:
+        0x01: "03,00,00,00,00,00"
+        0x05: "8A,01,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+      ecap:
+        0x00030: "03,00,00,00,00,00,00,00"
+    mld:
+      mmap: 1
+      memory_size: 0x100000000  # 4GB
+      num: 4
+      epc: 1
+      ttr: 1
+      granularity: 0  # 0=256MB, 1=512MB, 2=1GB
+      rng1: "0,4,8,12"
+      rng2: "3,7,11,15"
+      epc_en: 1
+      ttr_en: 1
+      egress_mod_pcnt: 10
+      egress_sev_pcnt: 25
+      sample_interval: 8
+      req_cmp_basis: 0
+      comp_interval: 64
+      bp_avg_pcnt: 42
+      alloc_bw: "64,64,64,64"
+      bw_limit: "ff,ff,ff,ff"
+  mld_5x16_1.1_64G:
+    did: 7
+    port:
+      dv: 1  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 5  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x1  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 16
+      mls: 5
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x3002
+      command: 0x0506
+      status: 0x0010
+      revid: 0
+      pi: 0x10
+      subclass: 0x02
+      baseclass: 0x05
+      cacheline: 0x10
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0007
+      cap:
+        0x01: "03,00,00,00,00,00"
+        0x05: "8A,01,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+      ecap:
+        0x00030: "07,00,00,00,00,00,00,00"
+    mld:
+      memory_size: 0x1000000000  # 64GB
+      num: 16
+      epc: 1
+      ttr: 1
+      granularity: 2  # 0=256MB, 1=512MB, 2=1GB
+      rng1: "0,4,8,12,16,20,24,28,32,36,40,44,48,52,56,60"
+      rng2: "4,8,12,16,20,24,28,32,36,40,44,48,52,56,60,64"
+      epc_en: 1
+      ttr_en: 1
+      egress_mod_pcnt: 10
+      egress_sev_pcnt: 25
+      sample_interval: 8
+      req_cmp_basis: 0
+      comp_interval: 64
+      bp_avg_pcnt: 42
+      alloc_bw: "16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16"
+      bw_limit: "ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff"
+  mld_5x16_2.0_4G:
+    did: 8
+    port:
+      dv: 2  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 5  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x3  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 16
+      mls: 5
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x2004
+      revid: 0
+      command: 0x0506
+      status: 0x0010
+      pi: 0x10
+      subclass: 0x02
+      baseclass: 0x05
+      cacheline: 0x10
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0005
+      cap:
+        0x01: "03,00,00,00,00,00"
+        0x05: "8A,01,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+      ecap:
+        0x00030: "05,00,00,00,00,00,00,00"
+    mld:
+      mmap: 1
+      memory_size: 0x100000000  # 4GB
+      num: 4
+      epc: 1
+      ttr: 1
+      granularity: 0  # 0=256MB, 1=512MB, 2=1GB
+      rng1: "0,4,8,12"
+      rng2: "3,7,11,15"
+      epc_en: 1
+      ttr_en: 1
+      egress_mod_pcnt: 10
+      egress_sev_pcnt: 25
+      sample_interval: 8
+      req_cmp_basis: 0
+      comp_interval: 64
+      bp_avg_pcnt: 42
+      alloc_bw: "64,64,64,64"
+      bw_limit: "ff,ff,ff,ff"
+  mld_5x16_2.0_64G:
+    did: 9
+    port:
+      dv: 2  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 5  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x3  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 16 
+      mls: 5
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x3004
+      command: 0x0506
+      status: 0x0010
+      revid: 0
+      pi: 0x10
+      subclass: 0x02
+      baseclass: 0x05
+      cacheline: 0x10
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x0009
+      cap:
+        0x01: "03,00,00,00,00,00"
+        0x05: "8A,01,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+      ecap:
+        0x00030: "09,00,00,00,00,00,00,00"
+    mld:
+      memory_size: 0x1000000000  # 64GB
+      num: 16
+      epc: 1
+      ttr: 1
+      granularity: 2  # 0=256MB, 1=512MB, 2=1GB
+      rng1: "0,4,8,12,16,20,24,28,32,36,40,44,48,52,56,60"
+      rng2: "4,8,12,16,20,24,28,32,36,40,44,48,52,56,60,64"
+      epc_en: 1
+      ttr_en: 1
+      egress_mod_pcnt: 10
+      egress_sev_pcnt: 25
+      sample_interval: 8
+      req_cmp_basis: 0
+      comp_interval: 64
+      bp_avg_pcnt: 42
+      alloc_bw: "16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16"
+      bw_limit: "ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff,ff"
+  sld_5x8_1.1_4G:
+    did: 10
+    port:
+      dv: 1  # 0=NC, 1=CXL1.1, 2=CXL2.0
+      dt: 4  # 0=NC, 1=PCIe, 2=CXLT1, 3=CXLT2, 4=CXLT3, 5=CXLT3 Pooled, 6=switch
+      cv: 0x1  # bit0=CXL1.1, bit1=CXL 2.0
+      mlw: 8
+      mls: 5
+    pcicfg:
+      vendor: 0x1aed
+      device: 0x4001
+      command: 0x0506
+      status: 0x0010
+      revid: 0
+      pi: 0x00  # 0=Vendor Specific 0x10=CXL 2.0 Compliant Device
+      subclass: 0x02  # 0x02=CXL Device
+      baseclass: 0x05  # 0x05=Memory Controller
+      cacheline: 0x10  # number of 4B values. 0x10=64B
+      type: 0x0
+      subvendor: 0x1aed
+      subsystem: 0x000A
+      intline: 0
+      intpin: 0
+      mingnt: 0
+      maxlat: 0
+      cap:
+        0x01: "03,00,00,00,00,00"
+        0x05: "8A,01,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+      ecap:
+        0x00030: "02,00,00,00,00,00,00,00"
+---
+emulator:
+#  verbosity-hex: 0x70
+#  verbosity-mctp: 0x00 
+  tcp-port: 2508
+  dir: "/cxl"  # mount -t tmpfs -o size=32G,mode=1777 cxl /cxl
+---
+switch:
+  vid: 0xa1a2
+  did: 0xb1b2
+  svid: 0xc1c2
+  ssid: 0xd1d2
+  sn: 0xa1a2a3a4a5a6a7a8
+  max_msg_size_n: 13
+  msg_rsp_limit_n: 13
+  bos_running: 0
+  bos_pcnt: 0 			
+  bos_opcode:	0	
+  bos_rc:	0
+  bos_ext: 0			
+  ingress_port: 1
+  num_ports: 32
+  num_vcss: 4
+  num_vppbs: 32
+  num_decoders: 32
+  mlw: 16
+  speeds: 0x30
+  mls: 5
+---
+ports:
+  0:
+    device: "cpu_5x16_2.0"
+  1:
+    device: "mld_5x8_2.0_4G"
+  2:
+    device: "mld_5x8_2.0_4G"
+  3:
+    device: "mld_5x16_2.0_64G"
+  4:
+    device: "mld_5x16_2.0_64G"
+  8:
+    state: 4
+#    device: "cpu_5x16_2.0"
+  9:
+#    device: "mld_5x8_1.1_4G"
+  10:
+#    device: "mld_5x16_1.1_4G"
+  11:
+#    device: "mld_5x8_2.0_4G"
+  12:
+#    device: "mld_5x16_2.0_4G"
+  16: 
+    mlw: 8
+    state: 4
+#    device: "cpu_5x16_2.0"
+  17:
+    mlw: 8
+#    device: "mld_5x8_1.1_4G"
+  18:
+    mlw: 8
+#    device: "mld_5x16_1.1_4G"
+  19:
+    mlw: 8
+#    device: "mld_5x8_2.0_4G"
+  20:
+    mlw: 8
+#    device: "mld_5x16_2.0_4G"
+  21:
+    mlw: 8
+  22:
+    mlw: 8
+  23:
+    mlw: 8
+  24:
+    mlw: 8
+    mls: 6
+    state: 4
+  25:
+    mlw: 8
+    mls: 6
+    speeds: 0x70
+  26:
+    mlw: 8
+    mls: 6
+    speeds: 0x70
+  27:
+    mlw: 8
+    mls: 6
+    speeds: 0x70
+  28:
+    mlw: 8
+    mls: 6
+    speeds: 0x70
+  29:
+    mlw: 8
+    mls: 6
+    speeds: 0x70
+  30:
+    mlw: 8
+    mls: 6
+    speeds: 0x70
+  31:
+    mlw: 8
+    mls: 6
+    speeds: 0x70
+---
+vcss:
+  0:
+    state: 1
+    uspid: 0
+    num_vppb: 8
+    vppbs:
+      0:
+        bind_status: 2  # 0=Unbound, 1=Inprogress, 2=Bound Physical, 3=Bound LD
+        ppid: 0
+        ldid: 0
+      1:
+        bind_status: 3  # 0=Unbound, 1=Inprogress, 2=Bound Physical, 3=Bound LD 
+        ppid: 1
+        ldid: 0
+      2:
+        bind_status: 3  # 0=Unbound, 1=Inprogress, 2=Bound Physical, 3=Bound LD 
+        ppid: 2
+        ldid: 0
+      3:
+        bind_status: 3  # 0=Unbound, 1=Inprogress, 2=Bound Physical, 3=Bound LD 
+        ppid: 3
+        ldid: 0
+      4:
+        bind_status: 3  # 0=Unbound, 1=Inprogress, 2=Bound Physical, 3=Bound LD 
+        ppid: 4
+        ldid: 0
+  1:
+    state: 1
+    uspid: 8
+    num_vppb: 8
+  2:
+    state: 1
+    uspid: 16
+    num_vppb: 8
+  3:
+    state: 1
+    uspid: 24
+    num_vppb: 8
