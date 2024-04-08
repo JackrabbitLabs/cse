@@ -46,8 +46,6 @@
 
 #include "options.h"
 
-#include "state.h"
-
 #include <fmapi.h>
 
 #include "fmapi_handler.h"

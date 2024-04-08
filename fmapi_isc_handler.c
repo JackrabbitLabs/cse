@@ -43,6 +43,7 @@
 #include <mctp.h>
 #include <ptrqueue.h>
 #include <timeutils.h>
+#include <cxlstate.h>
 #include "signals.h"
 
 #include "options.h"
@@ -154,18 +155,18 @@ int fmop_isc_bos(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API ISC Background Operation Status\n", now);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
 	STEP // 10: Perform Action 
 
 	STEP // 11: Prepare Response Object
-	rsp.obj.isc_bos.running = cxl_state->bos_running;
-	rsp.obj.isc_bos.pcnt 	= cxl_state->bos_pcnt;
-	rsp.obj.isc_bos.opcode 	= cxl_state->bos_opcode;
-	rsp.obj.isc_bos.rc 		= cxl_state->bos_rc;
-	rsp.obj.isc_bos.ext 	= cxl_state->bos_ext;
+	rsp.obj.isc_bos.running = cxls->bos_running;
+	rsp.obj.isc_bos.pcnt 	= cxls->bos_pcnt;
+	rsp.obj.isc_bos.opcode 	= cxls->bos_opcode;
+	rsp.obj.isc_bos.rc 		= cxls->bos_rc;
+	rsp.obj.isc_bos.ext 	= cxls->bos_ext;
 
 	STEP // 12: Serialize Response Object
 	len = fmapi_serialize(rsp.buf->payload, &rsp.obj, fmapi_fmob_rsp(req.hdr.opcode));
@@ -176,7 +177,7 @@ int fmop_isc_bos(struct mctp *m, struct mctp_action *ma)
 //send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -268,19 +269,19 @@ int fmop_isc_id(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API ISC Identify\n", now);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
 	STEP // 10: Perform Action 
 
 	STEP // 11: Prepare Response Object
-		rsp.obj.isc_id_rsp.vid 	= cxl_state->vid;
-		rsp.obj.isc_id_rsp.did 	= cxl_state->did;
-		rsp.obj.isc_id_rsp.svid = cxl_state->svid;
-		rsp.obj.isc_id_rsp.ssid = cxl_state->ssid;
-		rsp.obj.isc_id_rsp.sn 	= cxl_state->sn;
-		rsp.obj.isc_id_rsp.size = cxl_state->max_msg_size_n;
+		rsp.obj.isc_id_rsp.vid 	= cxls->vid;
+		rsp.obj.isc_id_rsp.did 	= cxls->did;
+		rsp.obj.isc_id_rsp.svid = cxls->svid;
+		rsp.obj.isc_id_rsp.ssid = cxls->ssid;
+		rsp.obj.isc_id_rsp.sn 	= cxls->sn;
+		rsp.obj.isc_id_rsp.size = cxls->max_msg_size_n;
 
 	STEP // 12: Serialize Response Object
 	len = fmapi_serialize(rsp.buf->payload, &rsp.obj, fmapi_fmob_rsp(req.hdr.opcode));
@@ -291,7 +292,7 @@ int fmop_isc_id(struct mctp *m, struct mctp_action *ma)
 //send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -383,14 +384,14 @@ int fmop_isc_msg_limit_get(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API ISC Get Response Message Limit\n", now);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
 	STEP // 10: Perform Action 
 
 	STEP // 11: Prepare Response Object
-	rsp.obj.isc_msg_limit.limit = cxl_state->msg_rsp_limit_n;
+	rsp.obj.isc_msg_limit.limit = cxls->msg_rsp_limit_n;
 
 	STEP // 12: Serialize Response Object
 	len = fmapi_serialize(rsp.buf->payload, &rsp.obj, fmapi_fmob_rsp(req.hdr.opcode));
@@ -401,7 +402,7 @@ int fmop_isc_msg_limit_get(struct mctp *m, struct mctp_action *ma)
 //send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -493,7 +494,7 @@ int fmop_isc_msg_limit_set(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API ISC Set Response Message Limit\n", now);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 	if (req.obj.isc_msg_limit.limit < 8 || req.obj.isc_msg_limit.limit > 20)
@@ -503,10 +504,10 @@ int fmop_isc_msg_limit_set(struct mctp *m, struct mctp_action *ma)
 	}
 
 	STEP // 10: Perform Action 
-	cxl_state->msg_rsp_limit_n = req.obj.isc_msg_limit.limit;
+	cxls->msg_rsp_limit_n = req.obj.isc_msg_limit.limit;
 
 	STEP // 11: Prepare Response Object
-	rsp.obj.isc_msg_limit.limit = cxl_state->msg_rsp_limit_n;
+	rsp.obj.isc_msg_limit.limit = cxls->msg_rsp_limit_n;
 
 	STEP // 12: Serialize Response Object
 	len = fmapi_serialize(rsp.buf->payload, &rsp.obj, fmapi_fmob_rsp(req.hdr.opcode));
@@ -519,7 +520,7 @@ int fmop_isc_msg_limit_set(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	STEP // 15: Fill Response Header
 	ma->rsp->len = fmapi_fill_hdr(&rsp.hdr, FMMT_RESP, req.hdr.tag, req.hdr.opcode, 0, len, rc, 0);

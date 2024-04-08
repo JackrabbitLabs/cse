@@ -43,6 +43,7 @@
 #include <mctp.h>
 #include <ptrqueue.h>
 #include <timeutils.h>
+#include <cxlstate.h>
 #include "signals.h"
 
 #include "options.h"
@@ -121,7 +122,7 @@ int fmop_psc_cfg(struct mctp *m, struct mctp_action *ma)
 	unsigned rc;
 	int rv, len;
 
-	struct port *p; 
+	struct cxl_port *p; 
 	__u16 reg; 
 
 	ENTER
@@ -158,15 +159,15 @@ int fmop_psc_cfg(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API PSC CXL.io Config. PPID: %d\n", now, req.obj.psc_cfg_req.ppid);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
-	if (req.obj.psc_cfg_req.ppid >= cxl_state->num_ports) 
+	if (req.obj.psc_cfg_req.ppid >= cxls->num_ports) 
 	{
-		IFV(CLVB_ERRORS) printf("%s ERR: Requested PPDI exceeds number of ports present. Requested PPID: %d Present: %d\n", now, req.obj.psc_cfg_req.ppid, cxl_state->num_ports);
+		IFV(CLVB_ERRORS) printf("%s ERR: Requested PPDI exceeds number of ports present. Requested PPID: %d Present: %d\n", now, req.obj.psc_cfg_req.ppid, cxls->num_ports);
 		goto send;
 	}
-	p = &cxl_state->ports[req.obj.psc_cfg_req.ppid];
+	p = &cxls->ports[req.obj.psc_cfg_req.ppid];
 
 	// Validate port is not bound or is an MLD port 
 	//if ( !(p->state == FMPS_DISABLED || p->ld > 0) ) 
@@ -222,7 +223,7 @@ int fmop_psc_cfg(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -315,14 +316,45 @@ int fmop_psc_id(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API PSC Identify Switch Device\n", now);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
 	STEP // 10: Perform Action 
 
 	STEP // 11: Prepare Response Object
-	state_conv_identity(cxl_state, &rsp.obj.psc_id_rsp);
+	{
+		struct cxl_switch *cs 		= cxls;
+		struct fmapi_psc_id_rsp *fi = &rsp.obj.psc_id_rsp;
+
+		// Zero out destination
+		memset(fi, 0, sizeof(*fi));
+	
+		// Copy static information 
+		fi->ingress_port 	= cs->ingress_port;		//!< Ingress Port ID 
+		fi->num_ports 		= cs->num_ports;		//!< Total number of physical ports
+		fi->num_vcss 		= cs->num_vcss;			//!< Max number of VCSs
+		fi->num_vppbs 		= cs->num_vppbs;		//!< Max number of vPPBs 
+		fi->num_decoders 	= cs->num_decoders;		//!< Number of HDM decoders available per USP 
+	
+		// Compute dynamic information 
+		for ( int i = 0 ; i < cs->num_ports ; i++ ) {
+			if ( cs->ports[i].state != FMPS_DISABLED ) 
+				fi->active_ports[i/8] |= (0x01 << (i % 8));
+		}
+	
+		for ( int i = 0 ; i < cs->num_vcss ; i++ ) {
+			if ( cs->vcss[i].state == FMVS_ENABLED) 
+				fi->active_vcss[i/8] |= (0x01 << (i % 8));
+		}
+	
+		for ( int i = 0 ; i < cs->num_vcss ; i++ ) {
+			for ( int j = 0 ; j < MAX_VPPBS_PER_VCS ; j++ ) {
+				if ( cs->vcss[i].vppbs[j].bind_status != FMBS_UNBOUND ) 
+					fi->active_vppbs++;
+			}
+		}
+	}
 
 	STEP // 12: Serialize Response Object
 	len = fmapi_serialize(rsp.buf->payload, &rsp.obj, fmapi_fmob_rsp(req.hdr.opcode));
@@ -333,7 +365,7 @@ int fmop_psc_id(struct mctp *m, struct mctp_action *ma)
 //send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -429,7 +461,7 @@ int fmop_psc_port(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API PSC Get Physical Port Status. Num: %d\n", now, req.obj.psc_port_req.num);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
@@ -441,11 +473,35 @@ int fmop_psc_port(struct mctp *m, struct mctp_action *ma)
 		id = req.obj.psc_port_req.ports[i];
 		
 		// Validate portid 
-		if (id >= cxl_state->num_ports)
+		if (id >= cxls->num_ports)
 			continue;
 
 		// Copy the data 
-		state_conv_port_info(&cxl_state->ports[id], &rsp.obj.psc_port_rsp.list[i]);
+		struct cxl_port *src 			= &cxls->ports[id];
+		struct fmapi_psc_port_info *dst = &rsp.obj.psc_port_rsp.list[i];
+
+		// Zero out destination
+		memset(dst, 0, sizeof(*dst));
+
+		// Copy static information 
+		dst->ppid 		= src->ppid;	//!< Physical Port ID
+		dst->state 		= src->state;	//!< Current Port Configuration State [FMPS]
+		dst->dv 		= src->dv;		//!< Connected Device CXL Version [FMDV]
+		dst->dt 		= src->dt;		//!< Connected Device Type [FMDT]
+		dst->cv			= src->cv;		//!< Connected device CXL Version [FMCV]
+		dst->mlw		= src->mlw; 	//!< Max link width
+		dst->nlw 		= src->nlw;		//!< Negotiated link width [FMNW]
+		dst->speeds		= src->speeds; 	//!< Supported Link speeds vector [FMSS]
+		dst->mls		= src->mls; 	//!< Max Link Speed [FMMS]
+		dst->cls		= src->cls; 	//!< Current Link Speed [FMMS] 
+		dst->ltssm		= src->ltssm; 	//!< LTSSM State [FMLS]
+		dst->lane 		= src->lane;	//!< First negotiated lane number
+		dst->lane_rev 	= src->lane_rev;//!< Link State Flags [FMLF] and [FMLO]
+		dst->perst 		= src->perst; 	//!< Link State Flags [FMLF] and [FMLO]
+		dst->prsnt 		= src->prsnt; 	//!< Link State Flags [FMLF] and [FMLO]
+		dst->pwrctrl 	= src->pwrctrl;	//!< Link State Flags [FMLF] and [FMLO]
+		dst->num_ld	= src->ld;			//!< Supported Logical Device (LDs) count 
+
 		rsp.obj.psc_port_rsp.num++;
 	}
 
@@ -458,7 +514,7 @@ int fmop_psc_port(struct mctp *m, struct mctp_action *ma)
 //send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -517,7 +573,7 @@ int fmop_psc_port_ctrl(struct mctp *m, struct mctp_action *ma)
 	unsigned rc;
 	int rv, len;
 
-	struct port *p;
+	struct cxl_port *p;
 
 	ENTER
 
@@ -553,15 +609,15 @@ int fmop_psc_port_ctrl(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API PSC Physical Port Control. PPID: %d Opcode: %d\n", now, req.obj.psc_port_ctrl_req.ppid, req.obj.psc_port_ctrl_req.opcode);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
-	if (req.obj.psc_port_ctrl_req.ppid >= cxl_state->num_ports) 
+	if (req.obj.psc_port_ctrl_req.ppid >= cxls->num_ports) 
 	{
-		IFV(CLVB_ERRORS) printf("%s ERR: Requested PPID exceeds number of ports present. Requested PPID: %d Present: %d\n", now, req.obj.psc_port_ctrl_req.ppid, cxl_state->num_ports);
+		IFV(CLVB_ERRORS) printf("%s ERR: Requested PPID exceeds number of ports present. Requested PPID: %d Present: %d\n", now, req.obj.psc_port_ctrl_req.ppid, cxls->num_ports);
 		goto send;
 	}
-	p = &cxl_state->ports[req.obj.psc_port_ctrl_req.ppid];
+	p = &cxls->ports[req.obj.psc_port_ctrl_req.ppid];
 
 	STEP // 10: Perform Action 
 	switch (req.obj.psc_port_ctrl_req.opcode)
@@ -599,7 +655,7 @@ int fmop_psc_port_ctrl(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;

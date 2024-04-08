@@ -43,6 +43,7 @@
 #include <mctp.h>
 #include <ptrqueue.h>
 #include <timeutils.h>
+#include <cxlstate.h>
 #include "signals.h"
 
 #include "options.h"
@@ -108,7 +109,7 @@
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_get_ld_alloc(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_get_ld_alloc(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];
@@ -217,7 +218,7 @@ end:
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_get_qos_alloc(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_get_qos_alloc(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];
@@ -311,7 +312,7 @@ end:
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_get_qos_ctrl(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_get_qos_ctrl(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];
@@ -404,7 +405,7 @@ end:
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_get_qos_limit(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_get_qos_limit(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];
@@ -498,7 +499,7 @@ end:
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_get_qos_stat(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_get_qos_stat(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];
@@ -584,7 +585,7 @@ end:
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_info(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_info(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];
@@ -673,7 +674,7 @@ end:
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_set_ld_alloc(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_set_ld_alloc(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];
@@ -795,7 +796,7 @@ end:
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_set_qos_alloc(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_set_qos_alloc(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];
@@ -904,7 +905,7 @@ end:
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_set_qos_ctrl(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_set_qos_ctrl(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];
@@ -1006,7 +1007,7 @@ end:
  *  11: Serialize Response Header 
  *  12: Return length of MF API Message (FMLN_HDR + object)
  */
-int fmop_mcc_set_qos_limit(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
+int fmop_mcc_set_qos_limit(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp)
 {
 	INIT
 	char now[ISO_TIME_BUF_LEN];

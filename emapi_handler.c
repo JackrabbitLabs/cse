@@ -44,7 +44,7 @@
 #include <ptrqueue.h>
 #include <timeutils.h>
 #include <emapi.h>
-
+#include <cxlstate.h>
 #include "signals.h"
 
 #include "options.h"
@@ -231,22 +231,22 @@ static int emop_conn_dev(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: EM API Connect Device. PPID: %d Device: %d\n", now, ppid, dev);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
-	if (ppid >= cxl_state->num_ports)
+	if (ppid >= cxls->num_ports)
 	{
-		IFV(CLVB_ERRORS) printf("%s ERR: PPID out of range. PPID: %d Total: %d\n", now, ppid, cxl_state->num_ports);
+		IFV(CLVB_ERRORS) printf("%s ERR: PPID out of range. PPID: %d Total: %d\n", now, ppid, cxls->num_ports);
 		goto send;
 	}
 	
-	if (dev >= cxl_state->num_devices) 
+	if (dev >= cxls->num_devices) 
 	{
-		IFV(CLVB_ERRORS) printf("%s ERR: Device ID out of range. Device ID: %d Total: %d\n", now, dev, cxl_state->num_devices);
+		IFV(CLVB_ERRORS) printf("%s ERR: Device ID out of range. Device ID: %d Total: %d\n", now, dev, cxls->num_devices);
 		goto send;
 	}
 	
-	if (cxl_state->devices[dev].name == NULL) 
+	if (cxls->devices[dev].name == NULL) 
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: Device is NULL. Device ID: %d\n", now, dev);
 		goto send;
@@ -255,7 +255,7 @@ static int emop_conn_dev(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_ACTIONS) printf("%s ACT: Connecting Device %d to PPID %d\n", now, dev, ppid);
 
 	STEP // 10: Perform Action 
-	state_connect_device(&cxl_state->ports[ppid], &cxl_state->devices[dev]);	
+	cxls_connect(&cxls->ports[ppid], &cxls->devices[dev], cxls->dir);	
 
 	STEP // 11: Prepare Response Object
 
@@ -268,7 +268,7 @@ static int emop_conn_dev(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if(len < 0)
 		goto fail;
@@ -370,21 +370,21 @@ static int emop_disconn_dev(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: EM API Disconnect Device. PPID: %d All: %d\n", now, ppid, all);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 	if (all) {
 		start = 0;
-		end = cxl_state->num_ports;
+		end = cxls->num_ports;
 	}
 	else {
 		start = ppid;
 		end = ppid+1;
 	}
 
-	if (start >= cxl_state->num_ports) 
+	if (start >= cxls->num_ports) 
 	{
-		IFV(CLVB_ERRORS) printf("%s ERR: PPID out of range. PPID: %d Total: %d\n", now, ppid, cxl_state->num_ports);
+		IFV(CLVB_ERRORS) printf("%s ERR: PPID out of range. PPID: %d Total: %d\n", now, ppid, cxls->num_ports);
 		goto send;
 	}
 
@@ -392,12 +392,12 @@ static int emop_disconn_dev(struct mctp *m, struct mctp_action *ma)
 	for ( i = start ; i < end ; i++ )
 	{
 		// Validate if port is connected 
-		if (cxl_state->ports[i].prsnt == 1) 
+		if (cxls->ports[i].prsnt == 1) 
 		{
 			IFV(CLVB_ACTIONS) printf("%s ACT: Disconnecting PPID %d\n", now, i);
 
 			// Perform disconnect
-			state_disconnect_device(&cxl_state->ports[i]);	
+			cxls_disconnect(&cxls->ports[i]);	
 		}
 	}
 
@@ -412,7 +412,7 @@ static int emop_disconn_dev(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto fail;
@@ -479,7 +479,7 @@ static int emop_list_dev(struct mctp *m, struct mctp_action *ma)
 
 	unsigned i, count;
 	__u8 num_requested, start_num; 
-	struct cse_device *d;
+	struct cxl_device *d;
 
 	ENTER
 
@@ -518,20 +518,20 @@ static int emop_list_dev(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: EM API list Devices. Start: %d Num: %d\n", now, start_num, num_requested);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 	if (num_requested == 0)
-		num_requested = (cxl_state->num_devices - start_num);
+		num_requested = (cxls->num_devices - start_num);
 
-	if (start_num >= cxl_state->num_devices) 
+	if (start_num >= cxls->num_devices) 
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: Start num out of range. Start: %d Total: %d\n", now, start_num, num_requested);
 		goto send;
 	}
 	
-	if ( (start_num + num_requested) >= cxl_state->num_devices)
-		num_requested = (cxl_state->num_devices - start_num);
+	if ( (start_num + num_requested) >= cxls->num_devices)
+		num_requested = (cxls->num_devices - start_num);
 
 	STEP // 10: Perform Action 
 	IFV(CLVB_ACTIONS) printf("%s ACT: Responding with %d devices\n", now, num_requested);
@@ -539,7 +539,7 @@ static int emop_list_dev(struct mctp *m, struct mctp_action *ma)
 	STEP // 11: Prepare Response Object
 	for ( i = 0 ; i < num_requested ; i++ )
 	{
-		d = &cxl_state->devices[start_num + i];
+		d = &cxls->devices[start_num + i];
 
 		// Serialize the id number
 		rspb->payload[len+0] = start_num + i;
@@ -565,7 +565,7 @@ static int emop_list_dev(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	STEP // 15: Fill Response Header
 	ma->rsp->len = emapi_fill_hdr(&rspm.hdr, EMMT_RSP, reqm.hdr.tag, rc, reqm.hdr.opcode, len, count, 0);

@@ -13,18 +13,20 @@
 # ******************************************************************************
 
 CC=gcc
-CFLAGS= -g3 -O0 -Wall -Wextra
-MACROS=-D CSE_VERBOSE
-INCLUDE_DIR=/usr/local/include
-LIB_DIR=/usr/local/lib  
-INCLUDE_PATH=-I $(INCLUDE_DIR) -I /usr/include/glib-2.0 -I /usr/lib/`uname -m`-linux-gnu/glib-2.0/include/ -I /usr/lib64/glib-2.0/include 
-LIB_PATH=-L $(LIB_DIR)
-LIBS=-l yamlloader -l yaml -l glib-2.0 -l mctp -l uuid -l ptrqueue -l fmapi -l emapi -l arrayutils -l pciutils -l timeutils -l pci
+CFLAGS?= -g3 -O0 -Wall -Wextra
+MACROS?=-D CSE_VERBOSE
+INCLUDE_DIR?=/usr/local/include
+LIB_DIR?=/usr/local/lib  
+LOCAL_INCLUDE_DIR?=./include
+LOCAL_LIB_DIR?=./lib
+INCLUDE_PATH=-I $(LOCAL_INCLUDE_DIR) -I $(INCLUDE_DIR) -I /usr/include/glib-2.0 -I /usr/lib/`uname -m`-linux-gnu/glib-2.0/include/ -I /usr/lib64/glib-2.0/include 
+LIB_PATH=-L $(LOCAL_LIB_DIR) -L $(LIB_DIR)
+LIBS=-l yamlloader -l yaml -l glib-2.0 -l mctp -l uuid -l ptrqueue -l fmapi -l emapi -l arrayutils -l timeutils -l pci -l cxlstate -l pciutils 
 TARGET=cse
 
 all: $(TARGET)
 
-$(TARGET): main.c options.o state.o signals.o emapi_handler.o fmapi_handler.o fmapi_isc_handler.o fmapi_psc_handler.o fmapi_vsc_handler.o fmapi_mpc_handler.o fmapi_mcc_handler.o  
+$(TARGET): main.c options.o state.o signals.o emapi_handler.o fmapi_handler.o fmapi_isc_handler.o fmapi_psc_handler.o fmapi_vsc_handler.o fmapi_mpc_handler.o fmapi_mcc_handler.o   
 	$(CC)    $^ $(CFLAGS) $(MACROS)  $(INCLUDE_PATH) $(LIB_PATH) $(LIBS) -o $@
 
 emapi_handler.o: emapi_handler.c emapi_handler.h
@@ -66,8 +68,11 @@ doc:
 install: $(TARGET)
 	sudo cp $(TARGET) /usr/local/bin/
 
+uninstall:
+	sudo rm /usr/local/bin/$(TARGET)
+
 # List all non file name targets as PHONY
-.PHONY: all clean doc install
+.PHONY: all clean doc install uninstall
 
 # Variables 
 # $^ 	Will expand to be all the sensitivity list

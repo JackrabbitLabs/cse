@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /**
  * @file 		state.c
- *
+cxl_ *
  * @brief 		Code file to manage the CXL switch state 
  *
  * @copyright 	Copyright (C) 2024 Jackrabbit Founders LLC. All rights reserved.
@@ -56,7 +56,7 @@
 #include <yamlloader.h>
 
 #include <fmapi.h>
-
+#include <cxlstate.h>
 #include <pciutils.h>
 
 #include "options.h" 
@@ -91,11 +91,11 @@
 
 /* PROTOTYPES ================================================================*/
 
-int state_load_devices(struct cxl_switch_state *state, GHashTable *ht);
-int state_load_emulator(struct cxl_switch_state *state, GHashTable *ht);
-int state_load_ports(struct cxl_switch_state *state, GHashTable *ht);
-int state_load_switch(struct cxl_switch_state *state, GHashTable *ht);
-int state_load_vcss(struct cxl_switch_state *state, GHashTable *ht);
+int state_load_devices(struct cxl_switch *state, GHashTable *ht);
+int state_load_emulator(struct cxl_switch *state, GHashTable *ht);
+int state_load_ports(struct cxl_switch *state, GHashTable *ht);
+int state_load_switch(struct cxl_switch *state, GHashTable *ht);
+int state_load_vcss(struct cxl_switch *state, GHashTable *ht);
 
 void _parse_devices(gpointer key, gpointer value, gpointer user_data);
 void _parse_device(gpointer key, gpointer value, gpointer user_data);
@@ -120,399 +120,14 @@ void state_print_pcie_cfg_space(__u8 *cfgspace, unsigned indent);
 /**
  * Global pointer to CXL Switch State
  */
-struct cxl_switch_state *cxl_state;
+struct cxl_switch *cxls;
 
 /* FUNCTIONS =================================================================*/
-
-/**
- * Convert state representation to fmapi representation for FM API Identify Switch Device
- *
- * @param[in] 	cs 	struct cxl_switch_state* to pull info from
- * @param[out] 	fi 	struct fmapi_psc_ident* to put info into 
- */
-void state_conv_identity(struct cxl_switch_state *cs, struct fmapi_psc_id_rsp *fi)
-{
-	// Zero out destination
-	memset(fi, 0, sizeof(*fi));
-
-	// Copy static information 
-	fi->ingress_port 	= cs->ingress_port;		//!< Ingress Port ID 
-	fi->num_ports 		= cs->num_ports;		//!< Total number of physical ports
-	fi->num_vcss 		= cs->num_vcss;			//!< Max number of VCSs
-	fi->num_vppbs 		= cs->num_vppbs;		//!< Max number of vPPBs 
-	fi->num_decoders 	= cs->num_decoders;		//!< Number of HDM decoders available per USP 
-
-	// Compute dynamic information 
-	for ( int i = 0 ; i < cs->num_ports ; i++ ) {
-		if ( cs->ports[i].state != FMPS_DISABLED ) 
-			fi->active_ports[i/8] |= (0x01 << (i % 8));
-	}
-
-	for ( int i = 0 ; i < cs->num_vcss ; i++ ) {
-		if ( cs->vcss[i].state == FMVS_ENABLED) 
-			fi->active_vcss[i/8] |= (0x01 << (i % 8));
-	}
-
-	for ( int i = 0 ; i < cs->num_vcss ; i++ ) {
-		for ( int j = 0 ; j < MAX_VPPBS_PER_VCS ; j++ ) {
-			if ( cs->vcss[i].vppbs[j].bind_status != FMBS_UNBOUND ) 
-				fi->active_vppbs++;
-		}
-	}
-}
-
-/**
- * Convert state representation to fmapi representation for FM API Phy Port State Response
- *
- * @param[in] 	src 	struct cxl_switch_state* to pull info from
- * @param[out] 	dst 	struct fmapi_psc_port_info* to put info into 
- */
-void state_conv_port_info(struct port *src, struct fmapi_psc_port_info *dst)
-{
-	// Zero out destination
-	memset(dst, 0, sizeof(*dst));
-
-	// Copy static information 
-	dst->ppid 		= src->ppid;	//!< Physical Port ID
-	dst->state 		= src->state;	//!< Current Port Configuration State [FMPS]
-	dst->dv 		= src->dv;		//!< Connected Device CXL Version [FMDV]
-	dst->dt 		= src->dt;		//!< Connected Device Type [FMDT]
-	dst->cv			= src->cv;		//!< Connected device CXL Version [FMCV]
-	dst->mlw		= src->mlw; 	//!< Max link width
-	dst->nlw 		= src->nlw;		//!< Negotiated link width [FMNW]
-	dst->speeds		= src->speeds; 	//!< Supported Link speeds vector [FMSS]
-	dst->mls		= src->mls; 	//!< Max Link Speed [FMMS]
-	dst->cls		= src->cls; 	//!< Current Link Speed [FMMS] 
-	dst->ltssm		= src->ltssm; 	//!< LTSSM State [FMLS]
-	dst->lane 		= src->lane;	//!< First negotiated lane number
-	dst->lane_rev 	= src->lane_rev;//!< Link State Flags [FMLF] and [FMLO]
-	dst->perst 		= src->perst; 	//!< Link State Flags [FMLF] and [FMLO]
-	dst->prsnt 		= src->prsnt; 	//!< Link State Flags [FMLF] and [FMLO]
-	dst->pwrctrl 	= src->pwrctrl;	//!< Link State Flags [FMLF] and [FMLO]
-	dst->num_ld	= src->ld;			//!< Supported Logical Device (LDs) count 
-}
-
-/**
- * Convert state representation to fmapi representation for FM API Get Virtual CXL Switch info
- *
- * @param[in] 	src 	struct cxl_switch_state* to pull info from
- * @param[out] 	dst 	struct fmapi_psc_port_info* to put info into 
- */
-void state_conv_vcs_info(struct vcs *src, struct fmapi_vsc_info_blk *dst)
-{
-	// Zero out destination
-	memset(dst, 0, sizeof(*dst));
-
-	// Copy static information 
-	dst->vcsid 			= src->vcsid;	 	//!< Virtual CXL Switch ID
-	dst->state 			= src->state;		//!< VCS State [FMVS]
-	dst->uspid 			= src->uspid;		//!< USP ID. Upstream physical port ID
-	dst->num 			= src->num;			//!< Number of vPPBs
-	
-	//!< Variable array of PPB Status Blocksa
-	for (int i = 0 ; i < dst->num ; i++) {
-		dst->list[i].status 	= src->vppbs[i].bind_status;
-		dst->list[i].ppid 		= src->vppbs[i].ppid;
-		dst->list[i].ldid 		= src->vppbs[i].ldid;
-	}
-}
-
-/**
- * Free memory allocated by the CXL Switch State  
- * 
- * STEPS:
- * 1: Destroy Mutex
- * 2: Free pci config space memory 
- * 3: Free Port MLD config space
- * 4: unmap memory space if present 
- * 5: Free Port MLD
- * 6: Free VCSs
- * 7: Free ports
- * 8: Free devices
- * 9: Free Switch State
- */ 
-void state_free(struct cxl_switch_state *state)
-{
-	INIT
-	unsigned i, k;
-	struct port *p;
-	struct cse_device *d;
-	
-	ENTER
-
-	if (state == NULL) 
-		return;
-	
-	STEP // 1: Destroy mutex
-	pthread_mutex_destroy(&state->mtx);
-
-	STEP // 2: Free pci config space memory 
-	for ( i = 0 ; i < state->num_ports ; i++ ) 
-	{
-		p = &state->ports[i];
-		if ( p->cfgspace != NULL ) 
-		{
-			free(p->cfgspace);
-			p->cfgspace = NULL;
-		}
-	}
-
-	STEP // 3: Free Port MLD config space
-	for ( i = 0 ; i < state->num_ports ; i++ ) 
-	{
-		p = &state->ports[i];
-		if (p->mld != NULL) 
-		{
-			for ( k = 0 ; k < MAX_LD ; k++ ) 
-			{
-				if ( p->mld->cfgspace[k] != NULL )
-				{
-					free(p->mld->cfgspace[k]);
-					p->mld->cfgspace[k] = NULL;
-				}
-			}
-		}
-	}
-
-	STEP // 4: unmap memory space if present 
-	for ( i = 0 ; i < state->num_ports ; i++ ) 
-	{
-		p = &state->ports[i];
-		if (p->mld != NULL) 
-		{
-			if (p->mld->memspace != NULL) 
-			{
-				munmap(p->mld->memspace, p->mld->memory_size);
-				p->mld->memspace = NULL;
-			}
-
-			if (p->mld->file != NULL) 
-			{
-				free(p->mld->file);
-				p->mld->file = NULL;
-			}
-		}
-	}
-	
-	STEP // 5: Free Port MLD
-	for ( i = 0 ; i < state->num_ports ; i++ )
-	{
-		p = &state->ports[i];
-		if (p->mld != NULL)
-		{
-			free(p->mld);
-			p->mld = NULL;
-		}
-	}
-	
-	STEP // 6: Free VCSs
-	if (state->vcss != NULL) 
-	{
-		free(state->vcss);
-		state ->vcss = NULL;
-	}
-
-	STEP // 7: Free Ports
-	if (state->ports != NULL) 
-	{
-		free(state->ports);
-		state->ports = NULL;
-	}
-
-	STEP // 8: Free devices
-	if (state->devices != NULL ) 
-	{
-		for ( i = 0 ; i < state->len_devices ; i++ )
-		{
-			d = &state->devices[i];
-
-			// Free device name string if present 
-			if (d->name != NULL) 
-			{
-				free(d->name);
-				d->name = NULL;
-			}
-
-			// Free device pcie config space if present 
-			if (d->cfgspace != NULL) 
-			{
-				free(d->cfgspace);
-				d->cfgspace = NULL;
-			}
-
-			// Free device MLD if present 
-			if (d->mld != NULL)
-			{
-				free(d->mld);
-				d->mld = NULL;
-			}
-		}
-
-		free(state->devices);
-		state->devices = NULL;
-	}
-	state->len_devices = 0;
-	state->num_devices = 0;
-
-	STEP // 9: Free Switch State
-	if (state->dir != NULL)
-	{
-		free(state->dir);
-		state->dir = NULL;
-	}
-
-	free(state);
-	state = NULL;
-
-	EXIT(0)
-}
-
-/**
- * Initialize state object with default values 
- * 
- * @return 	struct state. Returns 0 upon error and sets errno
- *
- * STEPS
- * 1: Validate inputs
- * 2: Initalize State Identity
- * 3: Initalize Ports 
- * 4: Initalize VCSs
- * 5: Initalize PCIe config space register
- */
-struct cxl_switch_state *state_init(unsigned ports, unsigned vcss, unsigned vppbs)
-{
-	INIT
-	unsigned i;
-	struct port *p;
-	struct vcs *v;
-	struct cxl_switch_state *state;
-
-	ENTER
-
-	STEP // 1: Validate inputs
-	if (ports > MAX_PORTS)
-		ports = MAX_PORTS;
-	if (vcss > MAX_VCSS)
-		vcss = MAX_VCSS;
-	if (vppbs > MAX_VPPBS)
-		vppbs = MAX_VPPBS;
-
-	STEP // 2: Initalize State Identity
-	state = calloc(1, sizeof(struct cxl_switch_state));
-	if(state == NULL) {
-		errno = ENOMEM;
-		goto end; 
-	}
-	
-	// Initialize Identity information
-	state->version = 1;
-	state->vid = 0xb1b2;
-	state->did = 0xc1c2;
-	state->svid = 0xd1d2;
-	state->ssid = 0xe1e2;
-	state->sn = 0xa1a2a3a4a5a6a7a8;
-	state->ingress_port = 1;
-	state->num_ports = ports;
-	state->num_vcss = vcss;
-	state->num_vppbs = vppbs;
-	state->num_decoders = 42;
-
-	// Initialize Mutex
-	pthread_mutex_init(&state->mtx, NULL);
-
-	STEP // 3: Initalize Ports 
-	state->ports = calloc(ports, sizeof(struct port));
-	if(state->ports == NULL) {
-		errno = ENOMEM;
-		goto end_state; 
-	}
-
-	// Set default port values
-	for ( i = 0 ; i < ports ; i++ ) {
-		p 				= &state->ports[i];
-		p->ppid 		= i;
-		p->state 		= FMPS_DISABLED;
-   		p->dv 			= FMDV_NOT_CXL;
-   		p->dt 			= FMDT_NONE;
-   		p->cv 			= 0;
-   		p->mlw 			= 16;
-   		p->nlw 			= 0;
-   		p->speeds 		= FMSS_PCIE5 | FMSS_PCIE4 | FMSS_PCIE3 | FMSS_PCIE2 | FMSS_PCIE1;
-   		p->mls 			= FMMS_PCIE5;
-   		p->cls 			= 0;
-   		p->ltssm 		= FMLS_DISABLED;
-   		p->lane 		= 0;
-		p->lane_rev 	= 0;
-		p->perst 		= 0;
-		p->prsnt 		= 0;
-		p->pwrctrl 		= 0;
-   		p->ld 			= 0;
-	}
-
-	STEP // 4: Initalize VCSs
-	state->vcss = calloc(vcss, sizeof(struct vcs));
-	if(state->vcss == NULL) {
-		errno = ENOMEM;
-		goto end_ports; 
-	}
-
-	// Set default vcs values
-	for ( i = 0 ; i < vcss ; i++) {
-		v 			= &state->vcss[i];
-		v->vcsid	= i;
-		v->state	= FMVS_DISABLED;
-		v->uspid	= 0;
-		v->num		= 0;
-
-		// Set the vcs->vppb[] array to zero
-		memset(v->vppbs, 0, MAX_VPPBS_PER_VCS * sizeof(struct vppb));
-	}
-
- 	STEP // 5: Initalize PCIe config space register
-	for ( i = 0 ; i < ports ; i++ )
-	{
-		state->ports[i].cfgspace = calloc(1, CFG_SPACE_SIZE);
-		if(state->vcss == NULL) {
-			errno = ENOMEM;
-			goto end_cfgspace; 
-		}
-	}
-
-	goto end;
-
-end_cfgspace:
-
-	for ( i = 0 ; i < ports ; i++ ) {
-		if( cxl_state->ports[i].cfgspace != NULL ) {
-			free(cxl_state->ports[i].cfgspace);
-			cxl_state->ports[i].cfgspace = NULL;
-		}
-	}
-
-	free(state->vcss);
-	state->vcss = NULL;
-
-end_ports:
-
-	free(state->ports);
-	state->ports = NULL;
-
-end_state:
-
-	free(state);
-	state = NULL;
-
-end:
-
-	EXIT(0)
-
-	return state;
-}
 
 /** 
  * Load config file and update state 
  *
- * @param state		struct cxl_switch_state to fill 
+ * @param state		struct cxl_switch to fill 
  * @param filename 	char * to yaml config file to load 
  * @return	 		Returns 0 on success, error code otherwise
  *
@@ -526,7 +141,7 @@ end:
  * 7: Parse VCSs
  * 8: Free memory allocated for hash table
  */
-int state_load(struct cxl_switch_state *state, char *filename)
+int state_load(struct cxl_switch *state, char *filename)
 {
 	INIT
 	int rv;
@@ -602,7 +217,7 @@ end:
  * 2: Allocate memory for devices in state
  * 3: Parse each entry in the hash table
  */
-int state_load_devices(struct cxl_switch_state *state, GHashTable *ht)
+int state_load_devices(struct cxl_switch *state, GHashTable *ht)
 {
 	INIT
 	int rv;
@@ -619,7 +234,7 @@ int state_load_devices(struct cxl_switch_state *state, GHashTable *ht)
 		goto end;
 
 	STEP // 2: Allocate memory for devices in state
-	state->devices = calloc(INITIAL_NUM_DEVICES, sizeof(struct cse_device));
+	state->devices = calloc(INITIAL_NUM_DEVICES, sizeof(struct cxl_device));
 	if (state->devices == NULL)
 		goto end;
 	state->len_devices = INITIAL_NUM_DEVICES;
@@ -646,7 +261,7 @@ end:
  * 1: Obtain hash table 
  * 2: Parse each entry in the hash table
  */
-int state_load_emulator(struct cxl_switch_state *state, GHashTable *ht)
+int state_load_emulator(struct cxl_switch *state, GHashTable *ht)
 {
 	INIT
 	int rv;
@@ -686,13 +301,13 @@ end:
  * 3: Parse each entry in the hash table
  * 4: Instantiate each port device 
  */
-int state_load_ports(struct cxl_switch_state *state, GHashTable *ht)
+int state_load_ports(struct cxl_switch *state, GHashTable *ht)
 {
 	INIT
 	int rv;
 	unsigned i, k;
 	yl_obj_t *ylo;
-	struct port *port;
+	struct cxl_port *port;
 
 	ENTER
 
@@ -733,7 +348,7 @@ int state_load_ports(struct cxl_switch_state *state, GHashTable *ht)
 			for ( k = 0 ; k < state->num_devices ; k++ ) 
 				if (state->devices[k].name != NULL)
 					if ( !strcmp(state->devices[k].name, port->device_name) ) 
-						state_connect_device(port, &state->devices[k]);		
+						cxls_connect(port, &state->devices[k], cxls->dir);		
 	}
 
 	rv = 0;
@@ -755,7 +370,7 @@ end:
  * 1: Obtain hash table 
  * 2: Parse each entry in the hash table
  */
-int state_load_switch(struct cxl_switch_state *state, GHashTable *ht)
+int state_load_switch(struct cxl_switch *state, GHashTable *ht)
 {
 	INIT
 	int rv;
@@ -793,7 +408,7 @@ end:
  * 1: Obtain hash table 
  * 2: Parse each entry in the hash table
  */
-int state_load_vcss(struct cxl_switch_state *state, GHashTable *ht)
+int state_load_vcss(struct cxl_switch *state, GHashTable *ht)
 {
 	INIT
 	int rv;
@@ -822,215 +437,6 @@ end:
 }
 
 /**
- * Copy data from a device definition to a port 
- *
- * @param p 	struct port* to fill with data
- * @param d 	struct cse_device* to pull the data from
- * 
- * STEPS:
- * 1: Copy basic parameters 
- * 2: Copy PCIe config space to the port
- * 3: Copy MLD information if present 
- * 4: Memory Map a file if requested by the device profile 
- */
-int state_connect_device(struct port *p, struct cse_device *d)
-{
-	INIT 
-	int rv;
-	unsigned i;
-	char filename[MAX_FILE_NAME_LEN];
-	FILE *fp;
-
-	ENTER
-
-	// Initialize variables
-	rv = 1;
-
-	// Validate Inputs 
-	if (d->name == NULL)
-		goto end;
-
-	STEP // 1: Copy basic parameters 
-    p->dv = d->dv;			
-    p->dt = d->dt;			
-    p->cv = d->cv;			
-	p->ltssm = FMLS_L0;
-	p->lane = 0;
-	p->lane_rev = 0;
-	p->perst = 0;
-	p->pwrctrl = 0;
-	p->ld = 0;
-
-	// If the device definition says this is a rootport then set as an Upstream Port
-	if( d->rootport == 1 )
-		p->state = FMPS_USP;
-	else 
-		p->state = FMPS_DSP;
-
-	// Pick the lower of the two widths
-	if (d->mlw < p->mlw)
-    	p->nlw = d->mlw << 4;
-	else 
-		p->nlw = p->mlw << 4;
-
-	// Pick the lower of the two speeds
-	if (d->mls < p->mls)
-		p->cls = d->mls;
-	else 
-		p->cls = p->mls;
-
-	// Set present bit 
- 	p->prsnt = 1; 
-
-	STEP // 2: Copy PCIe config space to the port
-	memcpy(p->cfgspace, d->cfgspace, CFG_SPACE_SIZE);
-
-	STEP // 3: Copy MLD information if present 
-	if (d->mld != NULL) 
-	{
-    	p->ld = d->mld->num;
-
-		// Allocate memory for MLD object in the port
-		p->mld = malloc(sizeof(struct mld));
-
-		// Copy MLD from device definition to port 
-		memcpy(p->mld, d->mld, sizeof(struct mld));
-
-		for ( i = 0 ; i < d->mld->num ; i++ )
-		{
-			// Allocate memory for each LD pcie config space
-			p->mld->cfgspace[i] = malloc(CFG_SPACE_SIZE);
-			
-			// Copy PCIe config space from device definition to port
-			memcpy(p->mld->cfgspace[i], d->cfgspace, CFG_SPACE_SIZE);
-		}
-	}
-
-	STEP // 4: Memory Map a file if requested by the device profile 
-	if (d->mld != NULL && d->mld->mmap == 1) 
-	{
-		// Prepare filename
-		sprintf(filename, "%s/port%02d", cxl_state->dir, p->ppid);
-
-		// Create file
-		fp = fopen(filename, "w+");
-		if (fp == NULL) {
-			printf("Error: Could not open file: %s\n", filename);
-			goto end;
-		}
-
-		// Truncate file to desired length
-		rv = ftruncate(fileno(fp), p->mld->memory_size);
-		if (rv != 0) {
-			printf("Error: Could not truncate file. Memory Size: 0x%llx errno: %d\n", p->mld->memory_size, errno);
-			goto end;
-		}
-
-		// mmap file
-		p->mld->memspace = mmap(NULL, p->mld->memory_size, PROT_READ | PROT_WRITE, MAP_SHARED, fileno(fp), 0);
-		if (p->mld->memspace == NULL) {
-			printf("Error: Could not mmap the file. errno: %d\n", errno);
-			rv = 1;
-			goto end;
-		}
-
-		// Save the filename to the port mld object 
-		p->mld->file = strdup(filename);
-
-		// Close file 
-		fclose(fp);
-	
-	}
-
-	rv = 0;
-
-end:
-
-	return rv;
-}
-
-/**
- * Clear / Free data from a port device definition 
- *
- * This function essemtially makes it appear as if the device has been removed from the slot
- *
- * @param p	struct port* The port to clear of values
- *
- * STEPS:
- * 1: Clear basic parameters 
- * 2: Clear PCIe config space 
- * 3: Free device name 
- * 4: Unmemmap MLD if present 
- * 5: Free PCIe cfg space for each ld
- * 6: Free MLD if present
- */
-int state_disconnect_device(struct port *p)
-{
-	INIT
-	int rv;
-	unsigned i;
-
-	ENTER 
-
-	// Initialize variables
-	rv = 1;
-
-	STEP // 1: Clear basic parameters 
-    p->dv = 0;
-    p->dt = 0;			
-    p->cv = 0;			
-    p->nlw = 0;
-	p->cls = 0;
-	p->ltssm = 0;
-	p->lane = 0;
-	p->lane_rev = 0;
-	p->perst = 0; 
- 	p->prsnt = 0;
-	p->pwrctrl = 0;
-	p->ld = 0;
-
-	STEP // 2: Clear PCIe config space 
-	memset(p->cfgspace, 0, CFG_SPACE_SIZE);
-
-	STEP // 3: Free device name 
-	if (p->device_name != NULL) 
-	{
-		free(p->device_name);
-		p->device_name = NULL;
-	}
-
-	STEP // 4: Unmemmap MLD if present 
-	if (p->mld != NULL && p->mld->memspace != NULL)
-	{
-		msync (p->mld->memspace, p->mld->memory_size, MS_SYNC); 
-		munmap(p->mld->memspace, p->mld->memory_size);
-		p->mld->memspace = NULL;
-	}
-
-	STEP // 5: Free PCIe cfg space for each ld
-	if (p->mld != NULL) 
-	{
-		for ( i = 0 ; i < p->mld->num ; i++ ) {
-			if ( p->mld->cfgspace[i] != NULL ) {
-				free(p->mld->cfgspace[i]);
-				p->mld->cfgspace[i] = NULL;
-			}
-		}
-	}
-
-	STEP // 6: Free MLD if present
-	if (p->mld != NULL) 
-	{
-		free(p->mld);
-		p->mld = NULL;
-	}
-
-	rv = 0;
-
-	return rv;
-}
-
-/**
  * Function to parse a device entry in the hash table
  *
  * STEPS
@@ -1042,7 +448,7 @@ int state_disconnect_device(struct port *p)
 void _parse_devices(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
-	struct cxl_switch_state *s;
+	struct cxl_switch *s;
 	yl_obj_t *ylo, *ylo_did;
 	unsigned did;
 	void * ptr; 
@@ -1051,7 +457,7 @@ void _parse_devices(gpointer key, gpointer value, gpointer user_data)
 
 	// Initialize varialbes
 	ylo = (yl_obj_t*) value;
-	s = (struct cxl_switch_state*) user_data;
+	s = (struct cxl_switch*) user_data;
 
 	IFV(CLVB_PARSE) printf("%d:%s Key: %s\n", gettid(), __FUNCTION__, (char*) key);
 	
@@ -1066,10 +472,10 @@ void _parse_devices(gpointer key, gpointer value, gpointer user_data)
 	if (s->num_devices >= s->len_devices) 
 	{
 		// Allocate more memory
-		ptr = calloc(s->len_devices + INITIAL_NUM_DEVICES, sizeof(struct cse_device));
+		ptr = calloc(s->len_devices + INITIAL_NUM_DEVICES, sizeof(struct cxl_device));
 
 		// Copy the existing data to new buffer
-		memcpy(ptr, s->devices, s->num_devices * sizeof(struct cse_device));
+		memcpy(ptr, s->devices, s->num_devices * sizeof(struct cxl_device));
 
 		// free old buffer
 		free(s->devices);
@@ -1103,7 +509,7 @@ void _parse_device(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
 	int rv;
-	struct cse_device *d;
+	struct cxl_device *d;
 	yl_obj_t *ylo;
 
 	ENTER
@@ -1111,7 +517,7 @@ void _parse_device(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	d = (struct cse_device*) user_data;
+	d = (struct cxl_device*) user_data;
 
 	STEP // 1: Verify the yaml loader object hash table is not NULL
 	if (ylo->ht == NULL) 
@@ -1134,7 +540,7 @@ void _parse_device(gpointer key, gpointer value, gpointer user_data)
 	{
 		// Allocate memory for MLD struct 
 		if (d->mld == NULL)
-			d->mld = calloc(1, sizeof(struct mld));
+			d->mld = calloc(1, sizeof(struct cxl_mld));
 	
 		g_hash_table_foreach(ylo->ht, _parse_device_mld, d->mld);	
 	}
@@ -1157,7 +563,7 @@ void _parse_device_mld(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
 	int rv;
-	struct mld *mld;
+	struct cxl_mld *mld;
 	yl_obj_t *ylo;
 
 	ENTER
@@ -1165,7 +571,7 @@ void _parse_device_mld(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	mld = (struct mld*) user_data;
+	mld = (struct cxl_mld*) user_data;
 
 	STEP // 1: Verify the yaml loader object string is not NULL
 	if (ylo->str == NULL) 
@@ -1427,7 +833,7 @@ end:
 void _parse_device_port(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
-	struct cse_device *d;
+	struct cxl_device *d;
 	yl_obj_t *ylo;
 	int rv;
 
@@ -1436,7 +842,7 @@ void _parse_device_port(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	d = (struct cse_device*) user_data;
+	d = (struct cxl_device*) user_data;
 
 	STEP // 1: Verify the yaml loader object string is not NULL
 	if (ylo->str == NULL) 
@@ -1470,7 +876,7 @@ end:
 void _parse_emulator(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
-	struct cxl_switch_state *s;
+	struct cxl_switch *s;
 	yl_obj_t *ylo;
 	int rv;
 
@@ -1479,7 +885,7 @@ void _parse_emulator(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	s = (struct cxl_switch_state*) user_data;
+	s = (struct cxl_switch*) user_data;
 
 	STEP // 1: Verify the yaml loader object string is not NULL
 	if (ylo->str == NULL) 
@@ -1521,7 +927,7 @@ end:
 void _parse_switch(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
-	struct cxl_switch_state *s;
+	struct cxl_switch *s;
 	yl_obj_t *ylo;
 	int rv;
 
@@ -1530,7 +936,7 @@ void _parse_switch(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	s = (struct cxl_switch_state*) user_data;
+	s = (struct cxl_switch*) user_data;
 
 	STEP // 1: Verify the yaml loader object string is not NULL
 	if (ylo->str == NULL) 
@@ -1580,7 +986,7 @@ void _parse_ports(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
 	yl_obj_t *ylo;
-	struct port *ports;
+	struct cxl_port *ports;
 	int rv, id;
 
 	ENTER
@@ -1588,7 +994,7 @@ void _parse_ports(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	ports = (struct port*) user_data;
+	ports = (struct cxl_port*) user_data;
 
 	STEP // 1: Verify the yaml loader object hash table is not NULL
 	if ( ylo->ht == NULL ) 
@@ -1619,7 +1025,7 @@ void _parse_port(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
 	yl_obj_t *ylo;
-	struct port *port; 
+	struct cxl_port *port; 
 	int rv;
 
 	ENTER
@@ -1627,7 +1033,7 @@ void _parse_port(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	port = (struct port*) user_data;
+	port = (struct cxl_port*) user_data;
 	
 	STEP // 1: Verify the yaml loader object string is not NULL
 	if ( ylo->str == NULL ) 
@@ -1660,7 +1066,7 @@ void _parse_vcss(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
 	yl_obj_t *ylo;
-	struct vcs *vcss; 
+	struct cxl_vcs *vcss; 
 	int rv, id;
 
 	ENTER
@@ -1668,7 +1074,7 @@ void _parse_vcss(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	vcss = (struct vcs*) user_data;
+	vcss = (struct cxl_vcs*) user_data;
 
 	STEP // 1: Verify the yaml loader object hash table is not NULL
 	if ( ylo->ht == NULL ) 
@@ -1699,13 +1105,13 @@ void _parse_vcs(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
 	yl_obj_t *ylo;
-	struct vcs *vcs;
+	struct cxl_vcs *vcs;
 
 	ENTER
 
 	// Initialize varialbes
 	ylo = (yl_obj_t*) value;
-	vcs = (struct vcs*) user_data;
+	vcs = (struct cxl_vcs*) user_data;
 	
 	STEP // 1: Assign KV pairs to state variables 
 	if ( ylo->str != NULL )
@@ -1737,7 +1143,7 @@ void _parse_vppbs(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
 	yl_obj_t *ylo;
-	struct vppb *vppbs; 
+	struct cxl_vppb *vppbs; 
 	int rv, id;
 
 	ENTER
@@ -1745,7 +1151,7 @@ void _parse_vppbs(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	vppbs = (struct vppb*) user_data;
+	vppbs = (struct cxl_vppb*) user_data;
 
 	STEP // 1: Verify the yaml loader object hash table is not NULL
 	if ( ylo->ht == NULL ) 
@@ -1776,7 +1182,7 @@ void _parse_vppb(gpointer key, gpointer value, gpointer user_data)
 {
 	INIT
 	yl_obj_t *ylo;
-	struct vppb *vppb; 
+	struct cxl_vppb *vppb; 
 	int rv;
 
 	ENTER
@@ -1784,7 +1190,7 @@ void _parse_vppb(gpointer key, gpointer value, gpointer user_data)
 	// Initialize varialbes
 	rv = 1;
 	ylo = (yl_obj_t*) value;
-	vppb = (struct vppb*) user_data;
+	vppb = (struct cxl_vppb*) user_data;
 
 	STEP // 1: Verify the yaml loader object string is not NULL
 	if ( ylo->str == NULL )
@@ -1803,247 +1209,5 @@ void _parse_vppb(gpointer key, gpointer value, gpointer user_data)
 end:
 
 	EXIT(rv)
-}
-
-/**
- * Print the CXL Switch State 
- */ 
-void state_print(struct cxl_switch_state *state)
-{
-	state_print_identity(state, 0);
-	state_print_ports(state, 0);
-	state_print_vcss(state, 0);
-}
-
-/**
- * Print the Device List
- */ 
-void state_print_devices(struct cxl_switch_state *s)
-{
-	struct cse_device *d;
-
-	if (s->devices == NULL) 
-		return;
-	
-	for ( unsigned i = 0 ; i < s->num_devices ; i++ )
-	{
-		d = &s->devices[i];
-
-		printf("%s:\n",       d->name);
-		printf("  Port:\n"); 	
-		printf("    dt:     %2d - %s\n", d->dt, fmdt(d->dt));
-		printf("    dv:     %2d - %s\n", d->dv, fmdv(d->dv));
-		printf("    cv:     %2d - %s\n", d->cv, fmvc(d->cv));
-		printf("    mlw:    %2d\n",      d->mlw);
-		
-		pcie_prnt_cfgspace(d->cfgspace, 2);
-	}
-}
-
-/**
- * Print the CXL Switch Idenfity Information
- *
- * @param	struct cxl_switch_state* to print
- * @param 	indent The number of spaces to indent the printed text
- */
-void state_print_identity(struct cxl_switch_state *s, unsigned indent)
-{
-	char space[MAX_INDENT] = "                                ";
-
-	// Handle indent
-	if (indent >= MAX_INDENT) 
-		indent = MAX_INDENT; 
-	space[indent] = 0;
-
-	// Print fields
-	printf("%singress_port: %u\n", 		space, s->ingress_port);
-	printf("%snum_ports:    %u\n", 		space, s->num_ports);
-	printf("%snum_vcss:     %u\n", 		space, s->num_vcss);
-	printf("%snum_vppbs:    %u\n", 		space, s->num_vppbs);
-	printf("%snum_decoders: %u\n", 		space, s->num_decoders);
-	printf("%sdir:          %s\n", 		space, s->dir);
-
-}
-
-/**
- * Print CXL MLD Info
- *
- * @param 	mld		struct mld* to use to print
- * @param	indent 	The number of spaces to indent the printed text
- */
-void state_print_mld(struct mld *mld, unsigned indent)
-{
-	char space[MAX_INDENT] = "                                ";
-
-	// Handle indent
-	if (indent >= MAX_INDENT) 
-		indent = MAX_INDENT; 
-	space[indent] = 0;
-
-	printf("%sMulti-Logical Device:\n", space);
-
-	space[indent] = ' ';
-	space[indent+2] = 0;
-
-	printf("%sMemory Size                               0x%016llx\n", 	space, mld->memory_size);
-	printf("%sNum LD                                    %d\n", 			space, mld->num);
-	printf("%sEgress Port Congestion Supported          %d\n", 			space, mld->epc);
-	printf("%sTemporary Throughput Reduction Supported  %d\n", 			space, mld->ttr);
-	printf("%sGranularity                               %d - %s\n", 	space, mld->granularity, fmmg(mld->granularity));
-	printf("%sEgress Port Congestion Enabled            %d\n", 			space, mld->epc_en);
-	printf("%sTemporary Throughput Reduction Enabled    %d\n", 			space, mld->ttr_en);
-	printf("%sEgress Moderate Percentage                %d\n", 			space, mld->egress_mod_pcnt);
-	printf("%sEgress Severe Percentage                  %d\n", 			space, mld->egress_sev_pcnt);
-	printf("%sBackpressure Sample Interval              %d\n", 			space, mld->sample_interval);
-	printf("%sReqCmpBasis                               %d\n", 			space, mld->rcb);
-	printf("%sCompletion Collection Interval            %d\n", 			space, mld->comp_interval);
-	printf("%sBackpressure Average Percentage           %d\n", 			space, mld->bp_avg_pcnt);
-	printf("%smmap                                      %d\n", 			space, mld->mmap);
-	printf("%smmap file                                 %s\n", 			space, mld->file);
-	printf("\n");
-	printf("%sLDID  Range 1            Range 2            Alloc BW BW Limit\n", space);
-	printf("%s----  ------------------ ------------------ -------- --------\n", space);
-	for ( int i = 0 ; i < mld->num ; i++ ) 
-		printf("%s%4d: 0x%016llx 0x%016llx %8d %8d\n", space, i, mld->rng1[i], mld->rng2[i], mld->alloc_bw[i], mld->bw_limit[i]);
-}
-
-/**
- * Print CXL Ports 
- *
- * @param	struct cxl_switch_stat* to use to print
- * @param 	indent The number of spaces to indent the printed text
- */
-void state_print_ports(struct cxl_switch_state *s, unsigned indent)
-{
-	char space[MAX_INDENT] = "                                ";
-
-	// Handle indent
-	if (indent >= MAX_INDENT) 
-		indent = MAX_INDENT; 
-	space[indent] = 0;
-
-	// Print fields
-	printf("%sports:\n", space);
-
-	for (int i = 0 ; i < s->num_ports ; i++) {
-		printf("%s  %02u:\n", space,i);
-		state_print_port(&s->ports[i], indent + 2 + INDENT);
-	}
-}
-
-/**
- * Print the CXL Port Information
- *
- * @param	struct port* to print
- * @param 	indent The number of spaces to indent the printed text
- */
-void state_print_port(struct port *p, unsigned indent)
-{
-	char space[MAX_INDENT] = "                                ";
-
-	// Handle indent
-	if (indent >= MAX_INDENT) 
-		indent = MAX_INDENT; 
-	space[indent] = 0;
-
-	// Print fields
-	printf("%sstate:                   %u\t\t%s\n", 	space, p->state, 	fmps(p->state));
-   	printf("%sdv:                      %u\t\t%s\n", 	space, p->dv, 		fmdv(p->dv));
-   	printf("%sdt:                      %u\t\t%s\n", 	space, p->dt,		fmdt(p->dt));
-   	printf("%scv:                      0x%02x\n", 		space, p->cv);
-   	printf("%smax_link_width:          %u\n", 			space, p->mlw);
-   	printf("%sneg_link_width:          %u\n", 			space, p->nlw);
-   	printf("%sspeeds:                  0x%02x\n", 		space, p->speeds);
-   	printf("%smax_link_speed:          %u\t\t%s\n", 	space, p->mls, 		fmms(p->mls));
-   	printf("%scur_link_speed:          %u\t\t%s\n", 	space, p->cls, 		fmms(p->cls));
-   	printf("%sltssm:                   %u\t\t%s\n", 	space, p->ltssm,	fmls(p->ltssm));
-   	printf("%sfirst_lane:              %u\n", 			space, p->lane);
-	printf("%sLane Reversal State      %d\n", 			space, p->lane_rev);
-	printf("%sPCIe Reset State         %d\n", 			space, p->perst);
-	printf("%sPort Presence pin state  %d\n", 			space, p->prsnt);
-	printf("%sPower Control State      %d\n", 			space, p->pwrctrl);
-   	printf("%sld:                      %u\n", 			space, p->ld);
-   	printf("%sDevice Name              %s\n", 			space, p->device_name);
-
-	if (p->cfgspace != NULL) {
-		pcie_prnt_cfgspace(p->cfgspace, indent);
-		autl_prnt_buf(p->cfgspace, 1024, 16, 1);	
-	}
-
-	if (p->mld != NULL) 
-		state_print_mld(p->mld, indent);
-}
-
-/**
- * Print the CXL VCS List 
- *
- * @param	struct cxl_switch_state* to print from 
- * @param 	indent The number of spaces to indent the printed text
- */
-void state_print_vcss(struct cxl_switch_state *s, unsigned indent)
-{
-	char space[MAX_INDENT] = "                                ";
-
-	// Handle indent
-	if (indent >= MAX_INDENT) 
-		indent = MAX_INDENT; 
-	space[indent] = 0;
-
-	// Print fields
-	printf("%svcss:\n", space);
-
-	for (int i = 0 ; i < s->num_vcss ; i++) {
-		printf("%s  %02u:\n", space, i);
-		state_print_vcs(&s->vcss[i], indent + 2 + INDENT);
-	}
-}
-
-/**
- * Print information for a single CXL VCS 
- *
- * @param	struct vcs* to print
- * @param 	indent The number of spaces to indent the printed text
- */
-void state_print_vcs(struct vcs *v, unsigned indent)
-{
-	char space[MAX_INDENT] = "                                ";
-
-	// Handle indent
-	if (indent >= MAX_INDENT) 
-		indent = MAX_INDENT; 
-	space[indent] = 0;
-
-	// Print fields of the VCS
-	printf("%sstate:          %u\t\t%s\n", 	space, v->state, 			fmvs(v->state));
-   	printf("%suspid:          %u\n", 		space, v->uspid);
-   	printf("%snum_vppb:       %u\n", 		space, v->num);
-	printf("%svppbs:\n",					space);
-
-	// Print the vPPBs of the VCS
-	for (int i = 0 ; i < v->num ; i++) {
-		printf("%s  %u:\n", space, i);
-		state_print_vppb(&v->vppbs[i], indent + 2 + INDENT);
-	}
-}
-
-/**
- * Print information for a single CXL vPPB
- *
- * @param	struct vppb* to print
- * @param 	indent The number of spaces to indent the printed text
- */
-void state_print_vppb(struct vppb *b, unsigned indent)
-{
-	char space[MAX_INDENT] = "                                ";
-
-	// Handle indent
-	if (indent >= MAX_INDENT) 
-		indent = MAX_INDENT; 
-	space[indent] = 0;
-
-	// Print fields of the VCS
-	printf("%sldid:           %u\n", 		space, b->ldid);
-	printf("%sppid:           %u\n", 		space, b->ppid);
-	printf("%sbind_status:    %u\t\t%s\n", 	space, b->bind_status, 	fmbs(b->bind_status));
 }
 

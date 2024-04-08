@@ -44,6 +44,7 @@
 #include <ptrqueue.h>
 #include <timeutils.h>
 #include <arrayutils.h>
+#include <cxlstate.h>
 #include "signals.h"
 
 #include "options.h"
@@ -82,16 +83,16 @@
 
 /* PROTOTYPES ================================================================*/
 
-int fmop_mcc_get_ld_alloc	(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
-int fmop_mcc_get_qos_alloc	(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
-int fmop_mcc_get_qos_ctrl	(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
-int fmop_mcc_get_qos_limit	(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
-int fmop_mcc_get_qos_stat	(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
-int fmop_mcc_info			(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
-int fmop_mcc_set_ld_alloc	(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
-int fmop_mcc_set_qos_alloc	(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
-int fmop_mcc_set_qos_ctrl	(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
-int fmop_mcc_set_qos_limit	(struct port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_get_ld_alloc	(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_get_qos_alloc	(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_get_qos_ctrl	(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_get_qos_limit	(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_get_qos_stat	(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_info			(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_set_ld_alloc	(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_set_qos_alloc	(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_set_qos_ctrl	(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
+int fmop_mcc_set_qos_limit	(struct cxl_port *p, struct fmapi_msg *req, struct fmapi_msg *rsp);
 
 /* GLOBAL VARIABLES ==========================================================*/
 
@@ -133,7 +134,7 @@ int fmop_mpc_cfg(struct mctp *m, struct mctp_action *ma)
 	unsigned rc;
 	int rv, len;
 
-	struct port *p;
+	struct cxl_port *p;
 	__u16 reg; 
 
 	ENTER
@@ -170,17 +171,17 @@ int fmop_mpc_cfg(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API MPC LD CXL.io Config. PPID: %d  LDID: %d\n", now, req.obj.mpc_cfg_req.ppid, req.obj.mpc_cfg_req.ldid);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
 	// Validate port number 
-	if (req.obj.mpc_cfg_req.ppid >= cxl_state->num_ports) 
+	if (req.obj.mpc_cfg_req.ppid >= cxls->num_ports) 
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: Invalid Port number requested. PPID: %d\n", now, req.obj.mpc_cfg_req.ppid);
 		goto send;
 	}
-	p = &cxl_state->ports[req.obj.mpc_cfg_req.ppid];
+	p = &cxls->ports[req.obj.mpc_cfg_req.ppid];
 
 	// Validate port is not bound 
 	//if ( !(p->state == FMPS_DISABLED) ) 
@@ -254,7 +255,7 @@ int fmop_mpc_cfg(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -313,7 +314,7 @@ int fmop_mpc_mem(struct mctp *m, struct mctp_action *ma)
 	unsigned rc;
 	int rv, len;
 
-	struct port *p;
+	struct cxl_port *p;
 	__u64 base, max, ld_size, granularity; 
 
 	ENTER
@@ -350,17 +351,17 @@ int fmop_mpc_mem(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API MPC LD CXL.io Mem. PPID: %d  LDID: %d\n", now, req.obj.mpc_mem_req.ppid, req.obj.mpc_mem_req.ldid);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
 	// Validate port number 
-	if (req.obj.mpc_mem_req.ppid >= cxl_state->num_ports) 
+	if (req.obj.mpc_mem_req.ppid >= cxls->num_ports) 
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: Invalid Port number requested. PPID: %d\n", now, req.obj.mpc_mem_req.ppid);
 		goto send;
 	}
-	p = &cxl_state->ports[req.obj.mpc_mem_req.ppid];
+	p = &cxls->ports[req.obj.mpc_mem_req.ppid];
 
 	// Validate port is not bound 
 	//if ( !(p->state == FMPS_DISABLED) ) 
@@ -453,7 +454,7 @@ int fmop_mpc_mem(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -509,7 +510,7 @@ int fmop_mpc_tmc(struct mctp *m, struct mctp_action *ma)
 	unsigned rc;
 	int rv, len;
 
-	struct port *p;
+	struct cxl_port *p;
 	ENTER
 
 	STEP // 1: Initialize variables
@@ -544,7 +545,7 @@ int fmop_mpc_tmc(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API MPC Tunneled Management Command. PPID: %d\n", now, req.obj.mpc_tmc_req.ppid);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
@@ -556,12 +557,12 @@ int fmop_mpc_tmc(struct mctp *m, struct mctp_action *ma)
 	}
 
 	// Validate port number 
-	if (req.obj.mpc_tmc_req.ppid >= cxl_state->num_ports) 
+	if (req.obj.mpc_tmc_req.ppid >= cxls->num_ports) 
 	{
 		IFV(CLVB_ERRORS) printf("%s Invalid Port number requested. PPID: %d\n", now, req.obj.mpc_tmc_req.ppid);
 		goto send;
 	}
-	p = &cxl_state->ports[req.obj.mpc_tmc_req.ppid];
+	p = &cxls->ports[req.obj.mpc_tmc_req.ppid];
 
 	// Validate device attached to port is an MLD port
 	if ( !(p->dt == FMDT_CXL_TYPE_3 || p->dt == FMDT_CXL_TYPE_3_POOLED) ) 
@@ -637,7 +638,7 @@ sub:
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;

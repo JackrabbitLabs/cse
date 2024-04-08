@@ -43,6 +43,7 @@
 #include <mctp.h>
 #include <ptrqueue.h>
 #include <timeutils.h>
+#include <cxlstate.h>
 #include "signals.h"
 
 #include "options.h"
@@ -121,7 +122,7 @@ int fmop_vsc_aer(struct mctp *m, struct mctp_action *ma)
 	unsigned rc;
 	int rv, len;
 
-	struct vcs *v;
+	struct cxl_vcs *v;
 
 	ENTER
 
@@ -157,15 +158,15 @@ int fmop_vsc_aer(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API VSC Generate AER Event. VCSID: %d vPPBID: %d\n", now, req.obj.vsc_aer_req.vcsid, req.obj.vsc_aer_req.vppbid);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
-	if (req.obj.vsc_aer_req.vcsid >= cxl_state->num_vcss) 
+	if (req.obj.vsc_aer_req.vcsid >= cxls->num_vcss) 
 	{
-		IFV(CLVB_ERRORS) printf("%s ERR: Requested VCSID exceeds number of VCSs present. Requested VCSID: %d Present: %d\n", now, req.obj.vsc_aer_req.vcsid, cxl_state->num_vcss);
+		IFV(CLVB_ERRORS) printf("%s ERR: Requested VCSID exceeds number of VCSs present. Requested VCSID: %d Present: %d\n", now, req.obj.vsc_aer_req.vcsid, cxls->num_vcss);
 		goto send;
 	}
-	v = &cxl_state->vcss[req.obj.vsc_aer_req.vcsid];
+	v = &cxls->vcss[req.obj.vsc_aer_req.vcsid];
 
 	// Validate vppbid 
 	if (req.obj.vsc_aer_req.vppbid >= v->num) 
@@ -188,7 +189,7 @@ int fmop_vsc_aer(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -247,9 +248,9 @@ int fmop_vsc_bind(struct mctp *m, struct mctp_action *ma)
 	unsigned rc;
 	int rv, len;
 
-	struct vcs *v;
-	struct vppb *b;
-	struct port *p;
+	struct cxl_vcs *v;
+	struct cxl_vppb *b;
+	struct cxl_port *p;
 
 	ENTER
 
@@ -285,20 +286,20 @@ int fmop_vsc_bind(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API VSC Bind vPPB. VCSID: %d vPPBID: %d PPID: %d LDID: 0x%04x\n", now, req.obj.vsc_bind_req.vcsid, req.obj.vsc_bind_req.vppbid, req.obj.vsc_bind_req.ppid, req.obj.vsc_bind_req.ldid);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
 	// Validate vcsid
-	if (req.obj.vsc_bind_req.vcsid >= cxl_state->num_vcss) 
+	if (req.obj.vsc_bind_req.vcsid >= cxls->num_vcss) 
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: VCS ID out of range. VCSID: %d\n", now, req.obj.vsc_bind_req.vcsid);
 		goto send; 
 	}
-	v = &cxl_state->vcss[req.obj.vsc_bind_req.vcsid];
+	v = &cxls->vcss[req.obj.vsc_bind_req.vcsid];
 	
 	// Validate vppbid 
-	if (req.obj.vsc_bind_req.vppbid >= cxl_state->vcss[req.obj.vsc_bind_req.vcsid].num) 
+	if (req.obj.vsc_bind_req.vppbid >= cxls->vcss[req.obj.vsc_bind_req.vcsid].num) 
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: vPPB ID out of range. vPPBID: %d\n", now, req.obj.vsc_bind_req.vppbid);
 		goto send;
@@ -306,12 +307,12 @@ int fmop_vsc_bind(struct mctp *m, struct mctp_action *ma)
 	b = &v->vppbs[req.obj.vsc_bind_req.vppbid];
 
 	// Validate port id 
-	if (req.obj.vsc_bind_req.ppid >= cxl_state->num_ports)
+	if (req.obj.vsc_bind_req.ppid >= cxls->num_ports)
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: PPID ID out of range. PPID: %d\n", now, req.obj.vsc_bind_req.ppid);
 		goto send;
 	}
-	p = &cxl_state->ports[req.obj.vsc_bind_req.ppid];	
+	p = &cxls->ports[req.obj.vsc_bind_req.ppid];	
 
 	// Check bindability to this port 
 
@@ -371,11 +372,11 @@ int fmop_vsc_bind(struct mctp *m, struct mctp_action *ma)
 	p->state = FMPS_DSP;
 
 	// Update Background Operation Status
-	cxl_state->bos_running = 0;
-	cxl_state->bos_pcnt = 100;
-	cxl_state->bos_opcode = req.hdr.opcode;
-	cxl_state->bos_rc = FMRC_SUCCESS;
-	cxl_state->bos_ext = 0;
+	cxls->bos_running = 0;
+	cxls->bos_pcnt = 100;
+	cxls->bos_opcode = req.hdr.opcode;
+	cxls->bos_rc = FMRC_SUCCESS;
+	cxls->bos_ext = 0;
 
 	STEP // 11: Prepare Response Object
 
@@ -388,7 +389,7 @@ int fmop_vsc_bind(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -447,7 +448,7 @@ int fmop_vsc_info(struct mctp *m, struct mctp_action *ma)
 	unsigned rc;
 	int rv, len;
 
-	struct vcs *v;
+	struct cxl_vcs *v;
 	unsigned i, k, stop, vppbid_start, vppbid_limit;
 	struct fmapi_vsc_info_blk *blk;
 	__u8 id;
@@ -486,7 +487,7 @@ int fmop_vsc_info(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API VSC Get Virtual Switch Info. Num: %d\n", now, req.obj.vsc_info_req.num);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
@@ -505,11 +506,11 @@ int fmop_vsc_info(struct mctp *m, struct mctp_action *ma)
 			break;
 		
 		// Skip VCS IDs that exceed current size 
-		if (id >= cxl_state->num_vcss) 
+		if (id >= cxls->num_vcss) 
 			continue;
 
 		// Get pointers to objects to copy 
-		v = &cxl_state->vcss[id];	// The struct vcs to copy from 
+		v = &cxls->vcss[id];	// The struct vcs to copy from 
 		blk = &rsp.obj.vsc_info_rsp.list[i];			// The struct fmapi_vcs_info_blk to copy into
 
 		// Zero out destination
@@ -546,7 +547,7 @@ int fmop_vsc_info(struct mctp *m, struct mctp_action *ma)
 //send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;
@@ -605,9 +606,9 @@ int fmop_vsc_unbind(struct mctp *m, struct mctp_action *ma)
 	unsigned rc;
 	int rv, len;
 
-	struct vcs *v;
-	struct vppb *b;
-	struct port *p;
+	struct cxl_vcs *v;
+	struct cxl_vppb *b;
+	struct cxl_port *p;
 
 	ENTER
 
@@ -643,20 +644,20 @@ int fmop_vsc_unbind(struct mctp *m, struct mctp_action *ma)
 	IFV(CLVB_COMMANDS) printf("%s CMD: FM API VSC Unbind vPPB. VCSID: %d vPPBID: %d\n", now, req.obj.vsc_unbind_req.vcsid, req.obj.vsc_unbind_req.vppbid);
 
 	STEP // 8: Obtain lock on switch state 
-	pthread_mutex_lock(&cxl_state->mtx);
+	pthread_mutex_lock(&cxls->mtx);
 
 	STEP // 9: Validate Inputs 
 
 	// Validate vcsid
-	if (req.obj.vsc_unbind_req.vcsid >= cxl_state->num_vcss) 
+	if (req.obj.vsc_unbind_req.vcsid >= cxls->num_vcss) 
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: VCS ID out of range. VCSID: %d\n", now, req.obj.vsc_unbind_req.vcsid);
 		goto send; 
 	}
-	v = &cxl_state->vcss[req.obj.vsc_unbind_req.vcsid];
+	v = &cxls->vcss[req.obj.vsc_unbind_req.vcsid];
 	
 	// Validate vppbid 
-	if (req.obj.vsc_unbind_req.vppbid >= cxl_state->vcss[req.obj.vsc_unbind_req.vcsid].num) 
+	if (req.obj.vsc_unbind_req.vppbid >= cxls->vcss[req.obj.vsc_unbind_req.vcsid].num) 
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: vPPB ID out of range. vPPBID: %d\n", now, req.obj.vsc_unbind_req.vppbid);
 		goto send;
@@ -671,13 +672,13 @@ int fmop_vsc_unbind(struct mctp *m, struct mctp_action *ma)
 	}
 
 	// Validate port id that the vppb was bound to  
-	if (b->ppid >= cxl_state->num_ports) 
+	if (b->ppid >= cxls->num_ports) 
 	{
 		IFV(CLVB_ERRORS) printf("%s ERR: PPID of bound port out of range. PPID: %d\n", now, b->ppid);
 		b->bind_status = FMBS_UNBOUND;
 		goto send;
 	}
-	p = &cxl_state->ports[b->ppid];	
+	p = &cxls->ports[b->ppid];	
 
 	// Check bindability to this port 
 
@@ -697,11 +698,11 @@ int fmop_vsc_unbind(struct mctp *m, struct mctp_action *ma)
 	b->ldid = 0;
 	
 	// Update Background Operation Status
-	cxl_state->bos_running = 0;
-	cxl_state->bos_pcnt = 100;
-	cxl_state->bos_opcode = req.hdr.opcode;
-	cxl_state->bos_rc = FMRC_SUCCESS;
-	cxl_state->bos_ext = 0;
+	cxls->bos_running = 0;
+	cxls->bos_pcnt = 100;
+	cxls->bos_opcode = req.hdr.opcode;
+	cxls->bos_rc = FMRC_SUCCESS;
+	cxls->bos_ext = 0;
 
 	STEP // 11: Prepare Response Object
 
@@ -714,7 +715,7 @@ int fmop_vsc_unbind(struct mctp *m, struct mctp_action *ma)
 send:
 
 	STEP // 14: Release lock on switch state 
-	pthread_mutex_unlock(&cxl_state->mtx);
+	pthread_mutex_unlock(&cxls->mtx);
 
 	if (len < 0)
 		goto end;

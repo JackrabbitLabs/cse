@@ -35,6 +35,7 @@
  * mctp_run()
  */
 #include <mctp.h>
+#include <cxlstate.h>
 
 #include "signals.h"
 
@@ -64,6 +65,10 @@
 #endif // CSE_VERBOSE
 
 #define IFV(u) 							if (opts[CLOP_VERBOSITY].u64 & u) 
+
+#define CSLN_PORTS 		32
+#define CSLN_VCSS 		32
+#define CSLN_VPPBS 		256
 
 /* ENUMERATIONS ==============================================================*/
 
@@ -97,6 +102,7 @@ int main(int argc, char* argv[])
 	struct mctp *m;
 
 	// Initialize varaibles
+	cxls = NULL;
 	stop_requested = 0;
 	rv = 1;
 
@@ -112,8 +118,8 @@ int main(int argc, char* argv[])
 	signals_register();
 
 	STEP // 2: Initialize global state array 
-	cxl_state = state_init(32, 32, 256);
-	if (cxl_state == NULL) 
+	cxls = cxls_init(CSLN_PORTS, CSLN_VCSS, CSLN_VPPBS);
+	if (cxls == NULL) 
 	{
 		printf("Error: state init failed \n");
 		goto end_options;		
@@ -122,7 +128,7 @@ int main(int argc, char* argv[])
 	STEP // 3: Load state file 
 	if (opts[CLOP_CONFIG_FILE].set) 
 	{
-		rv = state_load(cxl_state, opts[CLOP_CONFIG_FILE].str);
+		rv = state_load(cxls, opts[CLOP_CONFIG_FILE].str);
 		if (rv < 0) 
 		{
 			printf("Error: state load config file  failed \n");
@@ -130,11 +136,13 @@ int main(int argc, char* argv[])
 		}
 	}
 	
-	STEP // 4: Print the state 
+//	STEP // 4: Build PCI Representation
+	
+	STEP // 5: Print the state 
 	if (opts[CLOP_PRINT_STATE].set) 
-		state_print(cxl_state);
+		cxls_prnt(cxls);
 
-	STEP // 5: MCTP Init
+	STEP // 6: MCTP Init
 	m = mctp_init();
 	if (m == NULL) 
 		goto end_state;
@@ -150,7 +158,7 @@ int main(int argc, char* argv[])
 	// Set MCTP verbosity levels
 	mctp_set_verbosity(m, opts[CLOP_MCTP_VERBOSITY].u64);
 
-	STEP // 6: Run MCTP
+	STEP // 7: Run MCTP
 	rv = mctp_run(m, opts[CLOP_TCP_PORT].u16, opts[CLOP_TCP_ADDRESS].u32, MCRM_SERVER, 1, 1);
 	if (rv != 0)
 	{
@@ -175,13 +183,13 @@ int main(int argc, char* argv[])
 		goto end_mctp;
 	}
 
-	STEP // 7: While loop 
+	STEP // 8: While loop 
 	while ( stop_requested == 0 ) 
 	{
 		sleep(1);
 	}
 
-	STEP // 8: Stop MCTP
+	STEP // 9: Stop MCTP
 	mctp_stop(m);
 
 end_mctp:
@@ -192,7 +200,7 @@ end_mctp:
 
 end_state:
 	
-	state_free(cxl_state);
+	cxls_free(cxls);
 
 end_options:
 
