@@ -276,12 +276,12 @@ int fmop_isc_id(struct mctp *m, struct mctp_action *ma)
 	STEP // 10: Perform Action 
 
 	STEP // 11: Prepare Response Object
-		rsp.obj.isc_id_rsp.vid 	= cxls->vid;
-		rsp.obj.isc_id_rsp.did 	= cxls->did;
-		rsp.obj.isc_id_rsp.svid = cxls->svid;
-		rsp.obj.isc_id_rsp.ssid = cxls->ssid;
-		rsp.obj.isc_id_rsp.sn 	= cxls->sn;
-		rsp.obj.isc_id_rsp.size = cxls->max_msg_size_n;
+	rsp.obj.isc_id_rsp.vid 	= cxls->vid;
+	rsp.obj.isc_id_rsp.did 	= cxls->did;
+	rsp.obj.isc_id_rsp.svid = cxls->svid;
+	rsp.obj.isc_id_rsp.ssid = cxls->ssid;
+	rsp.obj.isc_id_rsp.sn 	= cxls->sn;
+	rsp.obj.isc_id_rsp.size = cxls->max_msg_size_n;
 
 	STEP // 12: Serialize Response Object
 	len = fmapi_serialize(rsp.buf->payload, &rsp.obj, fmapi_fmob_rsp(req.hdr.opcode));

@@ -39,6 +39,8 @@ cxl_ *
  */
 #include <sys/mman.h>
 
+#include <pci/pci.h>
+
 /** GHashTable 
  * g_hash_table_foreach()
 / */
@@ -96,6 +98,7 @@ int state_load_emulator(struct cxl_switch *state, GHashTable *ht);
 int state_load_ports(struct cxl_switch *state, GHashTable *ht);
 int state_load_switch(struct cxl_switch *state, GHashTable *ht);
 int state_load_vcss(struct cxl_switch *state, GHashTable *ht);
+int state_load_from_pci(struct cxl_switch *state);
 
 void _parse_devices(gpointer key, gpointer value, gpointer user_data);
 void _parse_device(gpointer key, gpointer value, gpointer user_data);
@@ -137,9 +140,10 @@ struct cxl_switch *cxls;
  * 3: Parse Emulator configuration 
  * 4: Parse Devices
  * 5: Parse Switch 
- * 6: Parse Ports
- * 7: Parse VCSs
- * 8: Free memory allocated for hash table
+ * 6: Load physical devices if in a QEMU environment
+ * 7: Parse Ports
+ * 8: Parse VCSs
+ * 9: Free memory allocated for hash table
  */
 int state_load(struct cxl_switch *state, char *filename)
 {
@@ -183,18 +187,30 @@ int state_load(struct cxl_switch *state, char *filename)
 	rv = state_load_switch(state, ht);
 	if (rv != 0) 
 		goto end;
+	
+	STEP // 6: Load physical devices if in a QEMU environment
+	if (opts[CLOP_QEMU].set == 1)
+	{
+		rv = state_load_from_pci(state);
+		if (rv != 0) 
+			goto end;
 
-	STEP // 6: Parse Ports
+		goto success;
+	}
+
+	STEP // 7: Parse Ports
 	rv = state_load_ports(state, ht);
 	if (rv != 0) 
 		goto end;
 
-	STEP // 7: Parse VCSs
+	STEP // 8: Parse VCSs
 	rv = state_load_vcss(state, ht);
 	if (rv != 0) 
 		goto end;
 
-	STEP // 8: Free memory allocated for hash table
+success:
+
+	STEP // 9: Free memory allocated for hash table
 	yl_free(ht);
 
 	rv = 0;
@@ -288,6 +304,252 @@ end:
 
 	return rv;
 }
+
+/**
+ * Load ports and vcs from physical pci devices
+ *
+ * @param ht 	GHashTable holding contents of config.yaml file
+ * @return 		Returns 0 upon success. Non zero otherwise
+ *
+ * STEPS
+ */
+int state_load_from_pci(struct cxl_switch *state)
+{
+	INIT
+
+	int rv, cache, mem;
+	unsigned int num_dvsec, nr;
+	__u32 l, type, vppbid;
+	__u16 w;
+	struct pci_dev *dev, *parent;
+	struct pci_cap *cap;
+	struct cxl_port cp;
+	__u32 fillflags;
+
+	ENTER 
+
+	// Initialize variables 
+	rv = 1;
+	fillflags =  PCI_FILL_IDENT		
+				|PCI_FILL_CLASS		
+				|PCI_FILL_CAPS		
+				|PCI_FILL_EXT_CAPS	
+				|PCI_FILL_PHYS_SLOT	
+				|PCI_FILL_MODULE_ALIAS
+				|PCI_FILL_LABEL		
+				|PCI_FILL_NUMA_NODE	
+				|PCI_FILL_IO_FLAGS	
+				|PCI_FILL_CLASS_EXT	
+				|PCI_FILL_SUBSYS		
+				|PCI_FILL_PARENT		
+				|PCI_FILL_DRIVER;
+
+	STEP // : get pci_access ptr, init pci_access ptr, get all the devices
+	state->pacc = pci_alloc(); 		
+	pci_init(state->pacc);			
+	pci_scan_bus(state->pacc);		
+
+	// STEP 3: Iiterate over all devices
+	for ( dev = state->pacc->devices ; dev ; dev = dev->next ) 
+	{
+		pci_fill_info(dev, PCI_FILL_CLASS); 	
+
+		// If this is a PCI-to-PCI Bridge then check if it is a CXL upstream port 
+		if ( (dev->device_class >> 8) == 0x06 && (dev->device_class & 0x0FF) == 0x04 )
+		{
+			// Get more info about this device 
+			pci_fill_info(dev, fillflags);
+
+			// Get PCI Express Capability 
+			cap = pci_find_cap(dev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
+			if (cap == NULL)
+				continue;
+
+			// Determine port type 
+			w = pci_read_word(dev, cap->addr + PCI_EXP_FLAGS);
+			type = (w & PCI_EXP_FLAGS_TYPE) >> 4;
+			if (type != PCI_EXP_TYPE_UPSTREAM)
+				continue;
+
+			// Clear the local CXL Port before filling it
+			memset(&cp, 0, sizeof(cp));
+
+			// Get max speed / width / vppbid 
+  			l = pci_read_long(dev, cap->addr + PCI_EXP_LNKCAP);
+  			cp.mls = l & PCI_EXP_LNKCAP_SPEED;
+  			cp.mlw = (l & PCI_EXP_LNKCAP_WIDTH) >> 4;
+			vppbid = l >> 24;
+
+			// Get cur speed / width 
+  			w = pci_read_word(dev, cap->addr + PCI_EXP_LNKSTA);
+  			cp.cls = w & PCI_EXP_LNKSTA_SPEED;
+  			cp.nlw = (w & PCI_EXP_LNKSTA_WIDTH) >> 4;
+		
+			// If parent is NULL, then skip this device as we know nothing about it
+			parent = dev->parent;
+			if (parent == NULL)
+				continue;
+		
+			// Get all info about the parent device 
+			pci_fill_info(parent, fillflags);
+
+			// Get PCI Express Capability 
+			cap = pci_find_cap(parent, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
+			if (cap == NULL)
+				continue;
+
+			// Get physical port id from Slot Number in PCI Express capability
+			l = pci_read_long(parent, cap->addr + PCI_EXP_SLTCAP);
+			cp.ppid = ((l & PCI_EXP_SLTCAP_PSN) >> 19);
+
+			// Set switch IDs based on the upstream port identifiers
+			state->vid = dev->vendor_id;
+			state->did = dev->device_id;
+			state->ssid = dev->subsys_id;
+			state->svid = dev->subsys_vendor_id;
+			state->sn =    ((__u64) dev->domain_16 		) << 48
+						|  ((__u64) dev->device_class 	) << 32
+						|  ((__u64) dev->prog_if 		) << 24
+						|  ((__u64) dev->bus 			) << 16
+						|  ((__u64) dev->dev 			) << 8
+						|  ((__u64) dev->func 			) ;
+
+			// Set bind in vcs 
+			state->vcss[0].uspid = cp.ppid;
+			state->vcss[0].state = FMVS_ENABLED;
+			state->vcss[0].vppbs[vppbid].ppid = cp.ppid;
+			state->vcss[0].vppbs[vppbid].bind_status = FMBS_BOUND_PORT;
+			state->vcss[0].vppbs[vppbid].ldid = 0;
+
+			// Fill local struct cxl_port fields 
+			cp.state = FMPS_USP;
+			cp.dt = FMDT_CXL_TYPE_1;
+			cp.speeds = cp.mls;
+			cp.ltssm = FMLS_L0;
+			cp.lane = 0;
+			cp.lane_rev = 0;
+			cp.perst = 0;
+			cp.prsnt = 1;
+			cp.pwrctrl = 0;
+			cp.dev = dev;
+			cp.dv = FMDV_CXL2_0;
+			cp.cv = FMCV_CXL1_1 | FMCV_CXL2_0;
+
+			// Copy local struct cxl_port into global state 
+			memcpy(&state->ports[cp.ppid], &cp, sizeof(cp));
+		}
+
+		// If this is a CXL device, then gather more info and the parent's info 
+		else if ( (dev->device_class >> 8) == 0x05 && (dev->device_class & 0x0FF) == 0x02 )
+		{
+			// Get more info about this device 
+			pci_fill_info(dev, fillflags);
+
+			// If parent is NULL, then skip this device as we know nothing about it
+			parent = dev->parent;
+			if (parent == NULL)
+				continue;
+		
+			// Get all info about the parent device 
+			pci_fill_info(parent, fillflags);
+
+			// Get PCI Express Capability (Parent)
+			cap = pci_find_cap(parent, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
+			if (cap == NULL)
+				continue;
+
+			// Determine port type (Parent)
+			w = pci_read_word(parent, cap->addr + PCI_EXP_FLAGS);
+			type = (w & PCI_EXP_FLAGS_TYPE) >> 4;
+			if ( type != PCI_EXP_TYPE_DOWNSTREAM )
+				continue;
+
+			// Clear the local CXL Port before filling it
+			memset(&cp, 0, sizeof(cp));
+
+			// Get physical port number from SLot number in PCI Express capability (Parent)
+			l = pci_read_long(parent, cap->addr + PCI_EXP_SLTCAP);
+			cp.ppid = ((l & PCI_EXP_SLTCAP_PSN) >> 19);
+
+			// Get max speed / width / vppbid (Parent)
+  			l = pci_read_long(parent, cap->addr + PCI_EXP_LNKCAP);
+  			cp.mls = l & PCI_EXP_LNKCAP_SPEED;
+  			cp.mlw = (l & PCI_EXP_LNKCAP_WIDTH) >> 4;
+			vppbid = l >> 24;
+
+			// Get cur speeds
+  			w = pci_read_word(parent, cap->addr + PCI_EXP_LNKSTA);
+  			cp.cls = w & PCI_EXP_LNKSTA_SPEED;
+  			cp.nlw = (w & PCI_EXP_LNKSTA_WIDTH) >> 4;
+		
+			// Get number of DVSEC Capabilities in Dev. Num returned in variable num_dvsec
+			num_dvsec = 0;
+			cap = pci_find_cap_nr(dev, PCI_EXT_CAP_ID_DVSEC, PCI_CAP_EXTENDED, &num_dvsec);
+
+			// Loop through DVSEC capabilities
+			for ( nr = 0 ; nr < num_dvsec ; nr++)
+			{
+				// Get DVSEC Capability entry number nr
+				cap = pci_find_cap_nr(dev, PCI_EXT_CAP_ID_DVSEC, PCI_CAP_EXTENDED, &nr);
+
+				// Get the DVSEC.type
+  				w = pci_read_long(dev, cap->addr + PCI_DVSEC_HEADER2);
+
+				// If DVSEC.type==0, this DVSEC Capability describes device type 
+				if (w == 0)
+				{
+					// Get the flags indicating what CXL protocols are supported
+					w = pci_read_word(dev, cap->addr + PCI_CXL_DEV_CAP);
+					cache = w & PCI_CXL_DEV_CAP_CACHE;
+					mem  = (w & PCI_CXL_DEV_CAP_MEM) >> 2;
+
+					// Determine Device Type 
+					if      (cache == 1 && mem == 0) cp.dt = FMDT_CXL_TYPE_1;
+					else if (cache == 1 && mem == 1) cp.dt = FMDT_CXL_TYPE_2;
+					else if (cache == 0 && mem == 1) cp.dt = FMDT_CXL_TYPE_3;
+
+					break;
+				}
+
+				// If the DVSEC Type is 9 then this is a MLD DVSEC 
+				else if (w == 9)
+				{
+					// Set that this is a MLD device 
+					cp.ld = pci_read_word(dev, cap->addr + PCI_CXL_MLD_NUM_LD);
+					cp.dt = FMDT_CXL_TYPE_3_POOLED;
+				}
+			}
+
+			// Set bind in vcs 
+			state->vcss[0].state = FMVS_ENABLED;
+			state->vcss[0].vppbs[vppbid].ppid = cp.ppid;
+			state->vcss[0].vppbs[vppbid].bind_status = FMBS_BOUND_PORT;
+			state->vcss[0].vppbs[vppbid].ldid = 0;
+
+			// Fill local struct cxl_port fields 
+			cp.state = FMPS_DSP;
+			cp.speeds = cp.mls;
+			cp.ltssm = FMLS_L0;
+			cp.lane = 0;
+			cp.lane_rev = 0;
+			cp.perst = 0;
+			cp.prsnt = 1;
+			cp.pwrctrl = 0;
+			cp.dev = dev;
+			cp.dv = FMDV_CXL2_0;
+			cp.cv = FMCV_CXL1_1 | FMCV_CXL2_0;
+
+			// Copy local struct cxl_port into global state 
+			memcpy(&state->ports[cp.ppid], &cp, sizeof(cp));
+		}
+	}
+
+	rv = 0;
+
+	return rv;
+}
+
+
 
 /**
  * Load port definitions from hash table into memory
@@ -960,13 +1222,13 @@ void _parse_switch(gpointer key, gpointer value, gpointer user_data)
 	else if (!strcmp(key, "bos_ext"))         	s->bos_ext 			= strtoul(ylo->str, NULL,0);
 	else if (!strcmp(key, "msg_rsp_limit_n"))	s->msg_rsp_limit_n	= atoi(ylo->str);
 	else if (!strcmp(key, "ingress_port")) 		s->ingress_port 	= atoi(ylo->str);
-	else if (!strcmp(key, "num_ports"))  		s->num_ports 		= atoi(ylo->str);
-	else if (!strcmp(key, "num_vcss"))     		s->num_vcss 		= atoi(ylo->str);
-	else if (!strcmp(key, "num_vppbs"))    		s->num_vppbs		= atoi(ylo->str);
 	else if (!strcmp(key, "num_decoders")) 		s->num_decoders 	= atoi(ylo->str);
 	else if (!strcmp(key, "mlw")) 				s->mlw 				= atoi(ylo->str);
 	else if (!strcmp(key, "speeds")) 			s->speeds 			= strtoul(ylo->str, NULL, 0);
 	else if (!strcmp(key, "mls"))			 	s->mls 				= atoi(ylo->str);
+	else if (!strcmp(key, "num_ports"))  		cxls_init_ports(s, atoi(ylo->str));
+	else if (!strcmp(key, "num_vcss"))     		cxls_init_vcss(s, atoi(ylo->str), s->num_vppbs);
+	else if (!strcmp(key, "num_vppbs"))    		cxls_init_vcss(s, s->num_vcss, atoi(ylo->str));
 
 	rv = 0;
 

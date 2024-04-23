@@ -73,7 +73,9 @@ char *STR_CLOP[] = {
 	"PRINT_STATE",	
 	"PRINT_OPTIONS",	
 	"CONFIG_FILE",	
-	"TCP_PORT"
+	"TCP_PORT",
+	"TCP_ADDRESS",
+	"QEMU"
 };
 
 /**
@@ -97,7 +99,7 @@ struct opt *opts = NULL;
 /**
  * Global string used by argp to print version with --version
  */
-const char *argp_program_version = "version 0.1";
+const char *argp_program_version = "version 0.2";
 
 /**
  * Global string used by argp when printing the help message
@@ -116,6 +118,8 @@ struct argp_option ao_main[] =
 {	
 	{0,0,0,0, "File Options",1},						
   	{"config",  			'c', "FILE", 0, "File name of CXL switch config file", 0},
+	{"qemu-sim", 			'q', NULL, OPTION_HIDDEN, "Enable control qemu devices, cse must be run as root", 0}
+	,	
 	{0,0,0,0, "Networking Options",2},
   	{"tcp-port", 			'P', "INT", 0, "Server TCP Port", 0},
   	{"tcp-address", 		'T', "INT", 0, "Server TCP Address", 0}
@@ -193,6 +197,20 @@ static int pr_main (
 			o->str = strndup(arg, CLMR_MAX_ARG_STR_LEN);
 			break;
 			
+		// qemu-sim
+		case 'q':
+			if(!getuid())
+			{
+				o = &opts[CLOP_QEMU];
+				o->set = 1;
+			}
+			else
+			{
+				printf("-q option must be run as root \n");
+				exit(0);
+			};
+			break;
+
 		// help
 		case 'h': 
 			print_help();

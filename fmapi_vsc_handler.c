@@ -22,6 +22,9 @@
  */
 #include <stdio.h>
 
+/* system()
+ */
+#include <stdlib.h>
 /* memset()
  */
 #include <string.h>
@@ -351,6 +354,21 @@ int fmop_vsc_bind(struct mctp *m, struct mctp_action *ma)
 		goto send;
 	}
 
+	// Check if this physical port is already bound to a vppb
+	for ( int i = 0 ; i < cxls->num_vcss ; i++ )
+	{
+		struct cxl_vcs *vcs = &cxls->vcss[i];
+		for ( int k = 0 ; k < vcs->num ; k++ )
+		{
+			struct cxl_vppb *vppb = &vcs->vppbs[k];
+			if ( vppb->ppid == p->ppid )
+			{
+				IFV(CLVB_ERRORS) printf("%s ERR: Specified PPID is already bound. PPBID: %d\n", now, req.obj.vsc_bind_req.ppid);
+				goto send;
+			}
+		}
+	}
+
 	STEP // 10: Perform Action 
 
 	IFV(CLVB_ACTIONS) printf("%s ACT: Binding VCSID: %d vPPBID: %d PPID: %d LDID: 0x%04x\n", now, req.obj.vsc_bind_req.vcsid, req.obj.vsc_bind_req.vppbid, req.obj.vsc_bind_req.ppid, req.obj.vsc_bind_req.ldid);
@@ -377,6 +395,14 @@ int fmop_vsc_bind(struct mctp *m, struct mctp_action *ma)
 	cxls->bos_opcode = req.hdr.opcode;
 	cxls->bos_rc = FMRC_SUCCESS;
 	cxls->bos_ext = 0;
+
+	// If QEMU, enable power to physical device 
+	if ( opts[CLOP_QEMU].set == 1 )
+	{
+		char cmd[64];
+		sprintf(cmd, "echo 1 > /sys/bus/pci/slots/%d/power", p->ppid);
+		rv = system(cmd);
+	}
 
 	STEP // 11: Prepare Response Object
 
@@ -703,6 +729,14 @@ int fmop_vsc_unbind(struct mctp *m, struct mctp_action *ma)
 	cxls->bos_opcode = req.hdr.opcode;
 	cxls->bos_rc = FMRC_SUCCESS;
 	cxls->bos_ext = 0;
+
+	// If QEMU, disable power to physical device 
+	if ( opts[CLOP_QEMU].set == 1 )
+	{
+		char cmd[64];
+		sprintf(cmd, "echo 0 > /sys/bus/pci/slots/%d/power", p->ppid);
+		rv = system(cmd);
+	}
 
 	STEP // 11: Prepare Response Object
 

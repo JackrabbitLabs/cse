@@ -26,11 +26,17 @@
  */
 #include <string.h>
 
+#include <pci/pci.h>
+
 /* struct timespec 
  * timespec_get()
  *
  */
 #include <time.h>
+
+/* system()
+ */
+#include <stdlib.h>
 
 /* autl_prnt_buf()
  */
@@ -190,10 +196,54 @@ int fmop_psc_cfg(struct mctp *m, struct mctp_action *ma)
 			rsp.obj.psc_cfg_rsp.data[2] = 0;
 			rsp.obj.psc_cfg_rsp.data[3] = 0;
 			
-			if (req.obj.psc_cfg_req.fdbe & 0x01) rsp.obj.psc_cfg_rsp.data[0] = p->cfgspace[reg+0];
-			if (req.obj.psc_cfg_req.fdbe & 0x02) rsp.obj.psc_cfg_rsp.data[1] = p->cfgspace[reg+1];
-			if (req.obj.psc_cfg_req.fdbe & 0x04) rsp.obj.psc_cfg_rsp.data[2] = p->cfgspace[reg+2];
-			if (req.obj.psc_cfg_req.fdbe & 0x08) rsp.obj.psc_cfg_rsp.data[3] = p->cfgspace[reg+3];
+			if (opts[CLOP_QEMU].set == 1)
+			{
+				switch(req.obj.psc_cfg_req.fdbe)
+				{
+					case 0x01: 
+					{
+						__u8 b = pci_read_byte(p->dev, reg);	
+
+						rsp.obj.psc_cfg_rsp.data[0] = b;
+					} break;
+
+					case 0x03:
+					{
+						// Verify word aligned 
+						if ((reg & 0x1) != 0)
+							goto send;
+
+						__u16 w = pci_read_word(p->dev, reg);	
+
+						rsp.obj.psc_cfg_rsp.data[0] = ( w      ) & 0x00FF;
+						rsp.obj.psc_cfg_rsp.data[1] = ( w >> 8 ) & 0x00FF;
+					} break;
+
+					case 0x0F:
+					{
+						// Verify long aligned 
+						if ((reg & 0x3) != 0)
+							goto send;
+
+						__u32 l = pci_read_long(p->dev, reg);	
+
+						rsp.obj.psc_cfg_rsp.data[0] = ( l      ) & 0x00FF;
+						rsp.obj.psc_cfg_rsp.data[1] = ( l >> 8 ) & 0x00FF;
+						rsp.obj.psc_cfg_rsp.data[2] = ( l >> 16) & 0x00FF;
+						rsp.obj.psc_cfg_rsp.data[3] = ( l >> 24) & 0x00FF;
+					} break;
+
+					default: 
+						goto send;
+				}
+			} 
+			else 
+			{
+				if (req.obj.psc_cfg_req.fdbe & 0x01) rsp.obj.psc_cfg_rsp.data[0] = p->cfgspace[reg+0];  
+				if (req.obj.psc_cfg_req.fdbe & 0x02) rsp.obj.psc_cfg_rsp.data[1] = p->cfgspace[reg+1];
+				if (req.obj.psc_cfg_req.fdbe & 0x04) rsp.obj.psc_cfg_rsp.data[2] = p->cfgspace[reg+2]; 
+				if (req.obj.psc_cfg_req.fdbe & 0x08) rsp.obj.psc_cfg_rsp.data[3] = p->cfgspace[reg+3];
+			}
 		}
 			break;
 
@@ -204,10 +254,52 @@ int fmop_psc_cfg(struct mctp *m, struct mctp_action *ma)
 
 			reg = (req.obj.psc_cfg_req.ext << 8) | req.obj.psc_cfg_req.reg;
 
-			if (req.obj.psc_cfg_req.fdbe & 0x01) p->cfgspace[reg+0] = req.obj.psc_cfg_req.data[0];
-			if (req.obj.psc_cfg_req.fdbe & 0x02) p->cfgspace[reg+1] = req.obj.psc_cfg_req.data[1];
-			if (req.obj.psc_cfg_req.fdbe & 0x04) p->cfgspace[reg+2] = req.obj.psc_cfg_req.data[2];
-			if (req.obj.psc_cfg_req.fdbe & 0x08) p->cfgspace[reg+3] = req.obj.psc_cfg_req.data[3];
+			if (opts[CLOP_QEMU].set == 1)
+			{
+				switch(req.obj.psc_cfg_req.fdbe)
+				{
+					case 0x01:
+					{
+						pci_write_byte(p->dev, reg, req.obj.psc_cfg_req.data[0]);
+					} break;
+
+					case 0x03:
+					{
+						// Verify word aligned 
+						if ((reg & 0x1) != 0)
+							goto send;
+
+						__u16 w =  (req.obj.psc_cfg_req.data[1] << 8) 
+						          | req.obj.psc_cfg_req.data[0];
+
+						pci_write_word(p->dev, reg, w);
+					} break;
+
+					case 0x0F:
+					{
+						// Verify long aligned 
+						if ((reg & 0x3) != 0)
+							goto send;
+
+						__u32 l = (req.obj.psc_cfg_req.data[3] << 24) 
+						         |(req.obj.psc_cfg_req.data[2] << 16)
+						         |(req.obj.psc_cfg_req.data[1] <<  8)
+						         |(req.obj.psc_cfg_req.data[0]      );
+
+						pci_write_long(p->dev, reg, l);
+					} break;
+
+					default: 
+						goto send;
+				}
+			}
+			else
+			{
+				if (req.obj.psc_cfg_req.fdbe & 0x01) p->cfgspace[reg+0] = req.obj.psc_cfg_req.data[0];
+				if (req.obj.psc_cfg_req.fdbe & 0x02) p->cfgspace[reg+1] = req.obj.psc_cfg_req.data[1];
+				if (req.obj.psc_cfg_req.fdbe & 0x04) p->cfgspace[reg+2] = req.obj.psc_cfg_req.data[2];
+				if (req.obj.psc_cfg_req.fdbe & 0x08) p->cfgspace[reg+3] = req.obj.psc_cfg_req.data[3];
+			}
 		}
 			break;
 	}
@@ -349,7 +441,7 @@ int fmop_psc_id(struct mctp *m, struct mctp_action *ma)
 		}
 	
 		for ( int i = 0 ; i < cs->num_vcss ; i++ ) {
-			for ( int j = 0 ; j < MAX_VPPBS_PER_VCS ; j++ ) {
+			for ( int j = 0 ; j < cs->vcss[i].num ; j++ ) {
 				if ( cs->vcss[i].vppbs[j].bind_status != FMBS_UNBOUND ) 
 					fi->active_vppbs++;
 			}
@@ -623,16 +715,33 @@ int fmop_psc_port_ctrl(struct mctp *m, struct mctp_action *ma)
 	switch (req.obj.psc_port_ctrl_req.opcode)
 	{
 		case FMPO_ASSERT_PERST:			// 0x00
+		{
+			char cmd[64];
+			sprintf(cmd, "echo 0 > /sys/bus/pci/slots/%d/power", p->ppid);
+
 			IFV(CLVB_ACTIONS) printf("%s ACT: Asserting PERST on PPID: %d\n", now, req.obj.psc_port_ctrl_req.ppid);
+
+			// Disable the device 
+			if ( opts[CLOP_QEMU].set == 1 )
+				rv = system(cmd);
 			
+			// Set PERST bit 
 			p->perst = 0x1;
-			break;
+		} break;
 
 		case FMPO_DEASSERT_PERST:		// 0x01
+		{
+			char cmd[64];
+			sprintf(cmd, "echo 1 > /sys/bus/pci/slots/%d/power", p->ppid);
+
 			IFV(CLVB_ACTIONS) printf("%s ACT: Deasserting PERST on PPID: %d\n", now, req.obj.psc_port_ctrl_req.ppid);
 
+			// Enable the device 
+			if ( opts[CLOP_QEMU].set == 1 )
+				rv = system(cmd);
+
 			p->perst = 0x0;
-			break;
+		} break;
 
 		case FMPO_RESET_PPB:			// 0x02
 			IFV(CLVB_ACTIONS) printf("%s ACT: Resetting PPID: %d\n", now, req.obj.psc_port_ctrl_req.ppid);

@@ -67,12 +67,14 @@
 #define IFV(u) 							if (opts[CLOP_VERBOSITY].u64 & u) 
 
 #define CSLN_PORTS 		32
-#define CSLN_VCSS 		32
+#define CSLN_VCSS 		16
 #define CSLN_VPPBS 		256
 
 /* ENUMERATIONS ==============================================================*/
 
 /* STRUCTS ===================================================================*/
+
+struct devices * qemu_devices;
 
 /* PROTOTYPES ================================================================*/
 
@@ -135,8 +137,6 @@ int main(int argc, char* argv[])
 			goto end_state;		
 		}
 	}
-	
-//	STEP // 4: Build PCI Representation
 	
 	STEP // 5: Print the state 
 	if (opts[CLOP_PRINT_STATE].set) 

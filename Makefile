@@ -26,7 +26,7 @@ TARGET=cse
 
 all: $(TARGET)
 
-$(TARGET): main.c options.o state.o signals.o emapi_handler.o fmapi_handler.o fmapi_isc_handler.o fmapi_psc_handler.o fmapi_vsc_handler.o fmapi_mpc_handler.o fmapi_mcc_handler.o   
+$(TARGET): main.c options.o state.o signals.o emapi_handler.o fmapi_handler.o fmapi_isc_handler.o fmapi_psc_handler.o fmapi_vsc_handler.o fmapi_mpc_handler.o fmapi_mcc_handler.o
 	$(CC)    $^ $(CFLAGS) $(MACROS)  $(INCLUDE_PATH) $(LIB_PATH) $(LIBS) -o $@
 
 emapi_handler.o: emapi_handler.c emapi_handler.h

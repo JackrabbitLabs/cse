@@ -89,6 +89,7 @@ enum _CLOP
 	CLOP_CONFIG_FILE,		//!< File to load CXL Switch configuration data <str>
 	CLOP_TCP_PORT,			//!< TCP Port to listen on for connections <u16>
 	CLOP_TCP_ADDRESS,		//!< TCP Address to listen on for connections <u32>
+	CLOP_QEMU,				//!< qemu switches, no emulation (for now) 
 	CLOP_MAX
 };
 
